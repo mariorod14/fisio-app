@@ -3,7 +3,7 @@ import datetime
 import random
 import uuid
 
-st.set_page_config(page_title="FisioPauta", layout="wide", page_icon="🩺")
+st.set_page_config(page_title="FisioSesión", layout="wide", page_icon="🩺")
 
 # =============================================================
 # 1. BASE DE DATOS SIMULADA
@@ -34,7 +34,7 @@ if 'plans' not in st.session_state:
             "exerciseIds": ["7769", "a91f", "e033"],
             "exerciseInstructions": {"7769": "3 series de 8", "a91f": "4 series de 6"},
             "pin": "785518",
-            "active": True,  # Nuevo campo para activar/desactivar
+            "active": True,
             "checkins": []
         }
     ]
@@ -53,7 +53,7 @@ def get_exercise(e_id):
 # =============================================================
 # INTERFAZ Y NAVEGACIÓN
 # =============================================================
-st.sidebar.title("🩺 FisioPauta")
+st.sidebar.title("🩺 FisioSesión")
 modo = st.sidebar.radio("Navegación:", ["👨‍⚕️ Área Clínica", "🏋️ Portal del Paciente"])
 
 # =============================================================
@@ -62,7 +62,7 @@ modo = st.sidebar.radio("Navegación:", ["👨‍⚕️ Área Clínica", "🏋�
 if modo == "👨‍⚕️ Área Clínica":
     st.title("Panel de Control Clínico")
     
-    tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Mis Pautas", "📊 Check-ins"])
+    tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Mis Sesiones", "📊 Check-ins"])
     
     # -------------------------------------------------------------
     # PESTAÑA 1: PACIENTES (Añadir, Perfil, Historial, Editar, Borrar)
@@ -81,24 +81,24 @@ if modo == "👨‍⚕️ Área Clínica":
         for p in st.session_state.patients:
             with st.expander(f"👤 {p['name']}"):
                 
-                # --- HISTORIAL Y PAUTAS ACTUALES ---
-                st.markdown("### 📋 Pautas Asignadas")
-                pautas_del_paciente = [pl for pl in st.session_state.plans if pl["patientId"] == p["id"]]
-                pautas_activas = [pl for pl in pautas_del_paciente if pl.get("active", True)]
-                pautas_inactivas = [pl for pl in pautas_del_paciente if not pl.get("active", True)]
+                # --- HISTORIAL Y SESIONES ACTUALES ---
+                st.markdown("### 📋 Sesiones Asignadas")
+                sesiones_del_paciente = [pl for pl in st.session_state.plans if pl["patientId"] == p["id"]]
+                sesiones_activas = [pl for pl in sesiones_del_paciente if pl.get("active", True)]
+                sesiones_inactivas = [pl for pl in sesiones_del_paciente if not pl.get("active", True)]
                 
-                if pautas_activas:
-                    st.success("**🟢 Pauta(s) Actual(es) / Activa(s)**")
-                    for pa in pautas_activas:
+                if sesiones_activas:
+                    st.success("**🟢 Sesión(es) Actual(es) / Activa(s)**")
+                    for pa in sesiones_activas:
                         st.write(f"- **{pa['title']}** (PIN: {pa['pin']})")
                         nombres_ej = [get_exercise(eid)["name"] for eid in pa["exerciseIds"] if get_exercise(eid)]
                         st.caption(f"Ejercicios: {', '.join(nombres_ej)}")
                 else:
-                    st.info("No tiene ninguna pauta activa ahora mismo.")
+                    st.info("No tiene ninguna sesión activa ahora mismo.")
 
-                if pautas_inactivas:
-                    st.warning("**⚪ Historial (Pautas Desactivadas)**")
-                    for pi in pautas_inactivas:
+                if sesiones_inactivas:
+                    st.warning("**⚪ Historial (Sesiones Desactivadas)**")
+                    for pi in sesiones_inactivas:
                         st.write(f"- {pi['title']} (PIN: {pi['pin']})")
                         nombres_ej = [get_exercise(eid)["name"] for eid in pi["exerciseIds"] if get_exercise(eid)]
                         st.caption(f"Ejercicios: {', '.join(nombres_ej)}")
@@ -117,12 +117,12 @@ if modo == "👨‍⚕️ Área Clínica":
                     st.rerun()
                 if col2.button("🗑️ Borrar Paciente", type="primary", key=f"del_{p['id']}"):
                     st.session_state.patients.remove(p)
-                    # Opcional: Borrar también las pautas asociadas a él
+                    # Borrar también las sesiones asociadas a él
                     st.session_state.plans = [pl for pl in st.session_state.plans if pl["patientId"] != p["id"]]
                     st.rerun()
 
     # -------------------------------------------------------------
-    # PESTAÑA 2: EJERCICIOS (Añadir, Editar, Borrar)
+    # PESTAÑA 2: EJERCICIOS (Vista por categorías, Añadir, Editar, Borrar)
     # -------------------------------------------------------------
     with tab_ej:
         with st.expander("➕ Añadir Nuevo Ejercicio", expanded=False):
@@ -133,12 +133,27 @@ if modo == "👨‍⚕️ Área Clínica":
                 if new_e_name and new_e_url:
                     st.session_state.exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
                     st.rerun()
-                    
-        st.subheader("Catálogo y Gestión")
-        ej_opciones = {"": "Selecciona un ejercicio para editar/borrar..."}
+        
+        st.subheader("Catálogo de Ejercicios")
+        
+        # VISUALIZACIÓN POR CATEGORÍAS (Desplegables)
+        for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
+            with st.expander(f"📁 {cat}"):
+                ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
+                if not ejs_cat:
+                    st.caption("No hay ejercicios creados en este grupo.")
+                for e in ejs_cat:
+                    c1, c2 = st.columns([3, 1])
+                    c1.write(f"🔹 **{e['name']}**")
+                    c2.markdown(f"[🔗 Ver vídeo]({e['videoUrl']})")
+
+        st.divider()
+        # SECCIÓN INFERIOR PARA EDITAR/BORRAR
+        st.markdown("#### ⚙️ Editar / Borrar Ejercicio")
+        ej_opciones = {"": "Selecciona un ejercicio si necesitas editarlo o borrarlo..."}
         ej_opciones.update({e["id"]: f"{e['name']} ({e['category']})" for e in st.session_state.exercises})
         
-        ej_selec = st.selectbox("Editar o borrar ejercicio:", options=list(ej_opciones.keys()), format_func=lambda x: ej_opciones[x])
+        ej_selec = st.selectbox("Buscar ejercicio:", options=list(ej_opciones.keys()), format_func=lambda x: ej_opciones[x])
         
         if ej_selec:
             ej_to_edit = get_exercise(ej_selec)
@@ -157,71 +172,81 @@ if modo == "👨‍⚕️ Área Clínica":
                     st.rerun()
 
     # -------------------------------------------------------------
-    # PESTAÑA 3: PAUTAS (Crear y Gestionar/Desactivar)
+    # PESTAÑA 3: SESIONES (Crear y Gestionar/Desactivar)
     # -------------------------------------------------------------
     with tab_pau:
-        sub_crear, sub_gestionar = st.tabs(["📝 Crear Nueva", "⚙️ Gestionar Creadas"])
+        sub_crear, sub_gestionar = st.tabs(["📝 Crear Nueva Sesión", "⚙️ Gestionar Creadas"])
         
-        # --- CREAR PAUTA ---
+        # --- CREAR SESIÓN ---
         with sub_crear:
             if not st.session_state.patients:
                 st.warning("Primero debes añadir pacientes.")
             else:
                 paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in st.session_state.patients], format_func=get_patient_name)
-                titulo_pauta = st.text_input("2. Título de la Pauta:")
+                titulo_sesion = st.text_input("2. Título de la Sesión:")
                 
-                opciones_ejs = {e["id"]: f"{e['name']} ({e['category']})" for e in st.session_state.exercises}
-                ejercicios_sel = st.multiselect("3. Selecciona los ejercicios:", options=list(opciones_ejs.keys()), format_func=lambda x: opciones_ejs[x])
+                st.markdown("**3. Selecciona los ejercicios:**")
+                ejercicios_sel = []
+                
+                # MOSTRAR CHECKBOXES AGRUPADOS POR CATEGORÍA
+                for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
+                    ejs_cat = [e for e in st.session_state.exercises if e['category'] == cat]
+                    if ejs_cat:
+                        st.markdown(f"*{cat}*")
+                        for e in ejs_cat:
+                            if st.checkbox(e["name"], key=f"chk_{e['id']}"):
+                                ejercicios_sel.append(e["id"])
                 
                 instrucciones_dict = {}
                 if ejercicios_sel:
                     st.markdown("**4. Instrucciones Específicas:**")
                     for e_id in ejercicios_sel:
-                        instrucciones_dict[e_id] = st.text_input(f"Instrucciones para: {opciones_ejs[e_id]}")
+                        ej_name = get_exercise(e_id)["name"]
+                        instrucciones_dict[e_id] = st.text_input(f"Instrucciones para: {ej_name}")
                         
-                if st.button("💾 Generar Pauta"):
-                    if titulo_pauta and ejercicios_sel:
+                if st.button("💾 Generar Sesión", type="primary"):
+                    if titulo_sesion and ejercicios_sel:
                         nuevo_pin = str(random.randint(100000, 999999))
                         st.session_state.plans.append({
                             "id": str(uuid.uuid4())[:4],
-                            "patientId": paciente_sel, "title": titulo_pauta,
+                            "patientId": paciente_sel, "title": titulo_sesion,
                             "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
                             "pin": nuevo_pin, "active": True, "checkins": []
                         })
-                        st.success(f"¡Guardada! PIN: {nuevo_pin}")
+                        st.success(f"¡Sesión guardada! PIN: {nuevo_pin}")
                     else:
-                        st.error("Rellena el título y selecciona ejercicios.")
+                        st.error("Rellena el título y marca al menos un ejercicio.")
 
-        # --- GESTIONAR PAUTAS ---
+        # --- GESTIONAR SESIONES ---
         with sub_gestionar:
             if not st.session_state.plans:
-                st.info("No hay pautas creadas.")
+                st.info("No hay sesiones creadas.")
             else:
-                pau_opciones = {"": "Selecciona una pauta..."}
-                pau_opciones.update({pl["id"]: f"{pl['title']} (Paciente: {get_patient_name(pl['patientId'])})" for pl in st.session_state.plans})
-                
-                pau_selec = st.selectbox("Pautas existentes:", options=list(pau_opciones.keys()), format_func=lambda x: pau_opciones[x])
-                
-                if pau_selec:
-                    pl_to_edit = next(pl for pl in st.session_state.plans if pl["id"] == pau_selec)
+                # BUCLE INVERSO: DE MÁS RECIENTE A MÁS ANTIGUA SIN DESPLEGABLE
+                for pl in reversed(st.session_state.plans):
+                    paciente_nombre = get_patient_name(pl['patientId'])
                     
-                    st.write(f"**PIN de acceso:** {pl_to_edit['pin']}")
-                    
-                    # Activar o Desactivar
-                    nuevo_estado = st.toggle("Pauta Activa (Si se apaga, el paciente no podrá entrar con este PIN)", value=pl_to_edit.get("active", True))
-                    if nuevo_estado != pl_to_edit.get("active", True):
-                        pl_to_edit["active"] = nuevo_estado
-                        st.rerun()
+                    with st.container(border=True):
+                        st.markdown(f"#### {pl['title']}")
+                        st.write(f"👤 **Paciente:** {paciente_nombre} | 🔑 **PIN:** {pl['pin']}")
                         
-                    # Editar título o Borrar
-                    ed_tit = st.text_input("Cambiar Título:", value=pl_to_edit["title"])
-                    c1, c2 = st.columns(2)
-                    if c1.button("💾 Guardar Título"):
-                        pl_to_edit["title"] = ed_tit
-                        st.rerun()
-                    if c2.button("🗑️ Eliminar Pauta Completa", type="primary"):
-                        st.session_state.plans.remove(pl_to_edit)
-                        st.rerun()
+                        nuevo_estado = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
+                        if nuevo_estado != pl.get("active", True):
+                            pl["active"] = nuevo_estado
+                            st.rerun()
+                            
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
+                            if st.button("💾 Guardar Título", key=f"sav_{pl['id']}"):
+                                pl["title"] = ed_tit
+                                st.rerun()
+                        with c2:
+                            st.write("") # Alineación vertical
+                            st.write("")
+                            if st.button("🗑️ Eliminar Sesión", type="primary", key=f"del_{pl['id']}"):
+                                st.session_state.plans.remove(pl)
+                                st.rerun()
 
     # -------------------------------------------------------------
     # PESTAÑA 4: CHECK-INS
@@ -233,7 +258,7 @@ if modo == "👨‍⚕️ Área Clínica":
             if plan.get("checkins"):
                 hay_checkins = True
                 paciente_nombre = get_patient_name(plan["patientId"])
-                with st.expander(f"📁 {paciente_nombre} - Pauta: {plan['title']}"):
+                with st.expander(f"📁 {paciente_nombre} - Sesión: {plan['title']}"):
                     for checkin in reversed(plan["checkins"]):
                         st.markdown(f"**📅 {checkin['date']}**")
                         st.markdown(f"- **EVA:** {checkin['eva']} / 10 | **Borg:** {checkin['borg']} / 10")
@@ -246,26 +271,26 @@ if modo == "👨‍⚕️ Área Clínica":
 # MÓDULO 2: PORTAL DEL PACIENTE
 # =============================================================
 else:
-    st.title("🏋️ Tu Pauta de Recuperación")
+    st.title("🏋️ Tu Sesión de Recuperación")
     
-    pin_input = st.text_input("🔑 Introduce el PIN de tu pauta:", type="password")
+    pin_input = st.text_input("🔑 Introduce el PIN de tu sesión:", type="password")
     
     if pin_input:
-        pauta_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
+        sesion_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
         
-        if pauta_encontrada:
-            if not pauta_encontrada.get("active", True):
-                st.error("⚠️ Esta pauta ha sido desactivada y ya no está vigente. Si crees que es un error, contacta con tu fisioterapeuta.")
+        if sesion_encontrada:
+            if not sesion_encontrada.get("active", True):
+                st.error("⚠️ Esta sesión ha sido desactivada y ya no está vigente. Si crees que es un error, contacta con tu fisioterapeuta.")
             else:
-                paciente_nombre = get_patient_name(pauta_encontrada["patientId"])
-                st.success(f"¡Hola {paciente_nombre}! Esta es tu pauta: **{pauta_encontrada['title']}**")
+                paciente_nombre = get_patient_name(sesion_encontrada["patientId"])
+                st.success(f"¡Hola {paciente_nombre}! Esta es tu sesión: **{sesion_encontrada['title']}**")
                 st.divider()
                 
-                for idx, e_id in enumerate(pauta_encontrada["exerciseIds"], 1):
+                for idx, e_id in enumerate(sesion_encontrada["exerciseIds"], 1):
                     ej_data = get_exercise(e_id)
                     if ej_data:
                         st.markdown(f"### {idx}. {ej_data['name'].upper()}")
-                        instruccion = pauta_encontrada.get("exerciseInstructions", {}).get(e_id, "")
+                        instruccion = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, "")
                         if instruccion:
                             st.info(f"📋 **Indicaciones:** {instruccion}")
                         st.video(ej_data["videoUrl"])
@@ -281,13 +306,12 @@ else:
                     comentario = st.text_area("Comentarios (molestias, sensaciones, etc.)")
                     
                     if st.form_submit_button("📩 Enviar Resultados al Fisio"):
-                        if "checkins" not in pauta_encontrada:
-                            pauta_encontrada["checkins"] = []
-                        pauta_encontrada["checkins"].append({
+                        if "checkins" not in sesion_encontrada:
+                            sesion_encontrada["checkins"] = []
+                        sesion_encontrada["checkins"].append({
                             "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                             "eva": eva, "borg": borg, "comment": comentario
                         })
-                        st.balloons()
                         st.success("¡Registro enviado con éxito!")
         else:
             st.error("PIN incorrecto.")
