@@ -3,15 +3,14 @@ import datetime
 import random
 import uuid
 
-# Configuración básica (oculta el menú por defecto de Streamlit)
+# Configuración básica
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="expanded")
 
 # =============================================================
-# INYECCIÓN DE CSS PERSONALIZADO (Estilo de tu App Original)
+# INYECCIÓN DE CSS PERSONALIZADO 
 # =============================================================
 estilo_css = """
 <style>
-    /* Variables de color de tu diseño original */
     :root {
         --ink: #17352e;
         --muted: #64756e;
@@ -22,78 +21,16 @@ estilo_css = """
         --bg: #f6f8f6;
         --danger: #aa3838;
     }
-
-    /* Fondo principal y tipografía */
-    .stApp {
-        background-color: var(--bg);
-        color: var(--ink);
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    }
-
-    /* Títulos y textos */
-    h1, h2, h3, h4, p, span, label {
-        color: var(--ink) !important;
-    }
-    
-    /* Botones primarios (Verde sólido) */
-    button[data-testid="baseButton-primary"] {
-        background-color: var(--green) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 9px !important;
-        font-weight: 700 !important;
-        padding: 11px 14px !important;
-    }
-
-    /* Botones secundarios (Estilo Ghost/Menta) */
-    button[data-testid="baseButton-secondary"] {
-        background-color: var(--mint) !important;
-        color: var(--green) !important;
-        border: none !important;
-        border-radius: 9px !important;
-        font-weight: 700 !important;
-        padding: 11px 14px !important;
-    }
-
-    /* Entradas de texto y selectores */
-    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
-        border: 1px solid var(--line) !important;
-        border-radius: 9px !important;
-        background-color: #fff !important;
-        color: var(--ink) !important;
-        padding: 11px !important;
-    }
-
-    /* Tarjetas y Expansores (Cards) */
-    [data-testid="stExpander"] {
-        background: #fff !important;
-        border: 1px solid var(--line) !important;
-        border-radius: 15px !important;
-    }
-    
-    /* Pestañas (Nav) */
-    .stTabs [data-baseweb="tab-list"] {
-        border-bottom: 1px solid var(--line);
-        gap: 5px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background: transparent;
-        color: var(--muted) !important;
-        border-radius: 7px 7px 0 0 !important;
-    }
-    .stTabs [aria-selected="true"] {
-        background: var(--mint) !important;
-        color: var(--green) !important;
-        font-weight: bold !important;
-    }
-
-    /* Contenedores de Sesiones */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        background: #fff !important;
-        border: 1px solid var(--line) !important;
-        border-radius: 15px !important;
-        padding: 15px !important;
-    }
+    .stApp { background-color: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; }
+    h1, h2, h3, h4, p, span, label { color: var(--ink) !important; }
+    button[data-testid="baseButton-primary"] { background-color: var(--green) !important; color: white !important; border: none !important; border-radius: 9px !important; font-weight: 700 !important; padding: 11px 14px !important; }
+    button[data-testid="baseButton-secondary"] { background-color: var(--mint) !important; color: var(--green) !important; border: none !important; border-radius: 9px !important; font-weight: 700 !important; padding: 11px 14px !important; }
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"], .stNumberInput input { border: 1px solid var(--line) !important; border-radius: 9px !important; background-color: #fff !important; color: var(--ink) !important; padding: 11px !important; }
+    [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
+    .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid var(--line); gap: 5px; }
+    .stTabs [data-baseweb="tab"] { background: transparent; color: var(--muted) !important; border-radius: 7px 7px 0 0 !important; }
+    .stTabs [aria-selected="true"] { background: var(--mint) !important; color: var(--green) !important; font-weight: bold !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; padding: 15px !important; }
 </style>
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
@@ -123,9 +60,12 @@ if 'plans' not in st.session_state:
             "id": "fdf8",
             "patientId": "49a7",
             "title": "menisco agosto",
-            "instructions": "",
-            "exerciseIds": ["7769", "a91f", "e033"],
-            "exerciseInstructions": {"7769": "3 series de 8", "a91f": "4 series de 6"},
+            "exerciseIds": ["7769", "a91f"],
+            # Ahora la estructura de instrucciones guarda series, reps y notas
+            "exerciseInstructions": {
+                "7769": {"series": "3", "reps": "12", "notes": "Goma verde"}, 
+                "a91f": {"series": "4", "reps": "8", "notes": "Sin prisa"}
+            },
             "pin": "785518",
             "active": True,
             "checkins": []
@@ -159,12 +99,13 @@ if modo == "👨‍⚕️ Área Clínica":
     # --- PESTAÑA PACIENTES ---
     with tab_pac:
         with st.expander("➕ Añadir Nuevo Paciente", expanded=False):
-            new_p_name = st.text_input("Nombre completo:")
-            new_p_notes = st.text_area("Notas clínicas:")
-            if st.button("Guardar Paciente Nuevo", type="primary"):
-                if new_p_name:
-                    st.session_state.patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
-                    st.rerun()
+            with st.form("nuevo_paciente_form", clear_on_submit=True):
+                new_p_name = st.text_input("Nombre completo:")
+                new_p_notes = st.text_area("Notas clínicas:")
+                if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
+                    if new_p_name:
+                        st.session_state.patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
+                        st.success("¡Paciente añadido correctamente!")
 
         st.markdown("<h3 style='margin-top:20px;'>Directorio y Perfiles</h3>", unsafe_allow_html=True)
         for p in st.session_state.patients:
@@ -200,39 +141,48 @@ if modo == "👨‍⚕️ Área Clínica":
     # --- PESTAÑA EJERCICIOS ---
     with tab_ej:
         with st.expander("➕ Añadir Nuevo Ejercicio", expanded=False):
-            new_e_name = st.text_input("Nombre del ejercicio:")
-            new_e_cat = st.selectbox("Categoría:", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"])
-            new_e_url = st.text_input("URL del Vídeo:")
-            if st.button("Guardar Ejercicio", type="primary"):
-                if new_e_name and new_e_url:
-                    st.session_state.exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
-                    st.rerun()
+            # Usamos st.form para que se borren los campos al guardar
+            with st.form("nuevo_ejercicio_form", clear_on_submit=True):
+                new_e_name = st.text_input("Nombre del ejercicio:")
+                new_e_cat = st.selectbox("Categoría:", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"])
+                new_e_url = st.text_input("URL del Vídeo:")
+                submitted_ej = st.form_submit_button("Guardar Ejercicio", type="primary")
+                
+                if submitted_ej:
+                    if new_e_name and new_e_url:
+                        st.session_state.exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
+                        st.success("¡Ejercicio guardado correctamente!")
+                    else:
+                        st.error("Rellena el nombre y la URL.")
         
-        st.markdown("<h3 style='margin-top:20px;'>Catálogo de Ejercicios</h3>", unsafe_allow_html=True)
+        # Conteo total de ejercicios
+        total_ejs = len(st.session_state.exercises)
+        st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
+        
+        # Conteo por categoría y edición en línea
         for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
-            with st.expander(f"📁 {cat}"):
-                ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
+            ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
+            
+            with st.expander(f"📁 {cat} ({len(ejs_cat)})"):
                 for e in ejs_cat:
-                    c1, c2 = st.columns([3, 1])
+                    c1, c2, c3 = st.columns([2.5, 1, 1])
                     c1.write(f"🔹 {e['name']}")
                     c2.markdown(f"[🔗 Ver vídeo]({e['videoUrl']})")
-
-        st.divider()
-        st.markdown("#### ⚙️ Editar / Borrar Ejercicio")
-        ej_opciones = {"": "Selecciona un ejercicio..."}
-        ej_opciones.update({e["id"]: f"{e['name']} ({e['category']})" for e in st.session_state.exercises})
-        ej_selec = st.selectbox("Buscar ejercicio:", options=list(ej_opciones.keys()), format_func=lambda x: ej_opciones[x])
-        
-        if ej_selec:
-            ej_to_edit = get_exercise(ej_selec)
-            ed_name = st.text_input("Nombre", value=ej_to_edit["name"])
-            ed_cat = st.selectbox("Cat", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"], index=["CORE", "EEII", "EESS", "Estiramientos y movilidad"].index(ej_to_edit["category"]))
-            ed_url = st.text_input("URL", value=ej_to_edit["videoUrl"])
-            c1, c2 = st.columns(2)
-            if c1.button("💾 Actualizar", type="primary"):
-                ej_to_edit["name"] = ed_name; ej_to_edit["category"] = ed_cat; ej_to_edit["videoUrl"] = ed_url; st.rerun()
-            if c2.button("🗑️ Borrar"):
-                st.session_state.exercises.remove(ej_to_edit); st.rerun()
+                    with c3:
+                        # Interruptor para abrir la edición de este ejercicio
+                        editar_modo = st.toggle("⚙️ Editar", key=f"tgl_{e['id']}")
+                    
+                    if editar_modo:
+                        with st.container(border=True):
+                            ed_name = st.text_input("Nombre", value=e["name"], key=f"en_{e['id']}")
+                            ed_cat = st.selectbox("Cat", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"], index=["CORE", "EEII", "EESS", "Estiramientos y movilidad"].index(e["category"]), key=f"ec_{e['id']}")
+                            ed_url = st.text_input("URL", value=e["videoUrl"], key=f"eu_{e['id']}")
+                            bc1, bc2 = st.columns(2)
+                            if bc1.button("💾 Actualizar", type="primary", key=f"esv_{e['id']}"):
+                                e["name"] = ed_name; e["category"] = ed_cat; e["videoUrl"] = ed_url; st.rerun()
+                            if bc2.button("🗑️ Borrar", key=f"edl_{e['id']}"):
+                                st.session_state.exercises.remove(e); st.rerun()
+                    st.divider()
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
@@ -257,9 +207,19 @@ if modo == "👨‍⚕️ Área Clínica":
                 
                 instrucciones_dict = {}
                 if ejercicios_sel:
-                    st.markdown("**4. Instrucciones Específicas:**")
+                    st.markdown("**4. Configuración de Ejercicios:**")
                     for e_id in ejercicios_sel:
-                        instrucciones_dict[e_id] = st.text_input(f"Para: {get_exercise(e_id)['name']}")
+                        ej_name = get_exercise(e_id)['name']
+                        st.markdown(f"**{ej_name}**")
+                        col_s, col_r, col_n = st.columns([1, 1, 2])
+                        with col_s:
+                            s = st.text_input("Series", key=f"ser_{e_id}", placeholder="Ej: 3")
+                        with col_r:
+                            r = st.text_input("Reps", key=f"rep_{e_id}", placeholder="Ej: 10")
+                        with col_n:
+                            n = st.text_input("Notas extra", key=f"not_{e_id}", placeholder="Ej: banda elástica verde")
+                        
+                        instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
                         
                 if st.button("💾 Generar Sesión", type="primary"):
                     if titulo_sesion and ejercicios_sel:
@@ -269,26 +229,38 @@ if modo == "👨‍⚕️ Área Clínica":
                             "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
                             "pin": nuevo_pin, "active": True, "checkins": []
                         })
-                        st.rerun()
+                        st.success(f"¡Sesión guardada con el PIN: {nuevo_pin}!")
+                        # Opcional: st.rerun() si prefieres que se limpie todo enseguida
 
         with sub_gestionar:
-            for pl in reversed(st.session_state.plans):
-                with st.container(border=True):
-                    st.markdown(f"#### {pl['title']}")
-                    st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
-                    st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
-                    
-                    pl["active"] = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
+            # Buscador de sesiones
+            search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
+            
+            planes_filtrados = list(reversed(st.session_state.plans))
+            if search_query:
+                q = search_query.lower()
+                planes_filtrados = [pl for pl in planes_filtrados if q in pl["title"].lower() or q in get_patient_name(pl["patientId"]).lower()]
+            
+            if not planes_filtrados:
+                st.info("No se encontraron sesiones.")
+            else:
+                for pl in planes_filtrados:
+                    with st.container(border=True):
+                        st.markdown(f"#### {pl['title']}")
+                        st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
+                        st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
                         
-                    c1, c2 = st.columns([3, 1])
-                    with c1:
-                        ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
-                        if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
-                            pl["title"] = ed_tit; st.rerun()
-                    with c2:
-                        st.write(""); st.write("")
-                        if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
-                            st.session_state.plans.remove(pl); st.rerun()
+                        pl["active"] = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
+                            
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
+                            if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
+                                pl["title"] = ed_tit; st.rerun()
+                        with c2:
+                            st.write(""); st.write("")
+                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
+                                st.session_state.plans.remove(pl); st.rerun()
 
     # --- PESTAÑA CHECK-INS ---
     with tab_res:
@@ -319,7 +291,6 @@ else:
             if not sesion_encontrada.get("active", True):
                 st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
             else:
-                # El Banner del paciente con el fondo oscuro y texto claro
                 banner_html = f"""
                 <div style='background:#103d33; color:white; border-radius:16px; padding:25px; margin:22px 0;'>
                     <h1 style='color:white !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
@@ -332,9 +303,27 @@ else:
                     ej_data = get_exercise(e_id)
                     if ej_data:
                         st.markdown(f"<h2 style='font-size:17px; margin:20px 0 6px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
-                        instruccion = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, "")
-                        if instruccion:
-                            st.markdown(f"<div style='color:#64756e; font-size:13px; margin-bottom:10px;'>{instruccion}</div>", unsafe_allow_html=True)
+                        
+                        inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
+                        
+                        # Manejo de las series/reps con compatibilidad si en el futuro cambias algo
+                        if isinstance(inst_data, dict):
+                            s = inst_data.get("series", "")
+                            r = inst_data.get("reps", "")
+                            n = inst_data.get("notes", "")
+                            
+                            detalles = []
+                            if s: detalles.append(f"<b>Series:</b> {s}")
+                            if r: detalles.append(f"<b>Reps:</b> {r}")
+                            if n: detalles.append(f"<b>Notas:</b> {n}")
+                            
+                            if detalles:
+                                info_html = " | ".join(detalles)
+                                st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{info_html}</div>", unsafe_allow_html=True)
+                        elif isinstance(inst_data, str) and inst_data:
+                            # Por si hay datos antiguos guardados como texto simple
+                            st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{inst_data}</div>", unsafe_allow_html=True)
+                            
                         st.video(ej_data["videoUrl"])
                         st.divider()
                         
