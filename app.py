@@ -4,7 +4,13 @@ import random
 import uuid
 
 # Configuración básica
-st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="collapsed")
+
+# =============================================================
+# CONTRASEÑA MAESTRA DEL FISIOTERAPEUTA
+# =============================================================
+# Cambia "FISIO123" por la contraseña que tú quieras usar para acceder al Área Clínica
+PASSWORD_FISIO = "FISIO123"
 
 # =============================================================
 # INYECCIÓN DE CSS PERSONALIZADO 
@@ -35,6 +41,10 @@ estilo_css = """
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
+# Control de sesión (para saber si estás logueado como fisio)
+if 'admin_mode' not in st.session_state:
+    st.session_state.admin_mode = False
+
 # =============================================================
 # BASE DE DATOS SIMULADA
 # =============================================================
@@ -61,7 +71,6 @@ if 'plans' not in st.session_state:
             "patientId": "49a7",
             "title": "menisco agosto",
             "exerciseIds": ["7769", "a91f"],
-            # Ahora la estructura de instrucciones guarda series, reps y notas
             "exerciseInstructions": {
                 "7769": {"series": "3", "reps": "12", "notes": "Goma verde"}, 
                 "a91f": {"series": "4", "reps": "8", "notes": "Sin prisa"}
@@ -83,15 +92,16 @@ def get_exercise(e_id):
     return None
 
 # =============================================================
-# NAVEGACIÓN
+# MÓDULO 1: ÁREA CLÍNICA (Solo visible si el PIN es el del fisio)
 # =============================================================
-st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
-modo = st.sidebar.radio("Navegación:", ["👨‍⚕️ Área Clínica", "🏋️ Portal del Paciente"])
+if st.session_state.admin_mode:
+    
+    # Botón para cerrar la sesión de fisio
+    st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
+    if st.sidebar.button("🔒 Cerrar Sesión Segura", type="primary"):
+        st.session_state.admin_mode = False
+        st.rerun()
 
-# =============================================================
-# MÓDULO 1: ÁREA CLÍNICA
-# =============================================================
-if modo == "👨‍⚕️ Área Clínica":
     st.markdown("<h1>Panel de Control Clínico</h1>", unsafe_allow_html=True)
     
     tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Mis Sesiones", "📊 Check-ins"])
@@ -141,7 +151,6 @@ if modo == "👨‍⚕️ Área Clínica":
     # --- PESTAÑA EJERCICIOS ---
     with tab_ej:
         with st.expander("➕ Añadir Nuevo Ejercicio", expanded=False):
-            # Usamos st.form para que se borren los campos al guardar
             with st.form("nuevo_ejercicio_form", clear_on_submit=True):
                 new_e_name = st.text_input("Nombre del ejercicio:")
                 new_e_cat = st.selectbox("Categoría:", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"])
@@ -155,11 +164,9 @@ if modo == "👨‍⚕️ Área Clínica":
                     else:
                         st.error("Rellena el nombre y la URL.")
         
-        # Conteo total de ejercicios
         total_ejs = len(st.session_state.exercises)
         st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
         
-        # Conteo por categoría y edición en línea
         for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
             ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
             
@@ -169,7 +176,6 @@ if modo == "👨‍⚕️ Área Clínica":
                     c1.write(f"🔹 {e['name']}")
                     c2.markdown(f"[🔗 Ver vídeo]({e['videoUrl']})")
                     with c3:
-                        # Interruptor para abrir la edición de este ejercicio
                         editar_modo = st.toggle("⚙️ Editar", key=f"tgl_{e['id']}")
                     
                     if editar_modo:
@@ -217,7 +223,7 @@ if modo == "👨‍⚕️ Área Clínica":
                         with col_r:
                             r = st.text_input("Reps", key=f"rep_{e_id}", placeholder="Ej: 10")
                         with col_n:
-                            n = st.text_input("Notas extra", key=f"not_{e_id}", placeholder="Ej: banda elástica verde")
+                            n = st.text_input("Notas extra", key=f"not_{e_id}", placeholder="Ej: banda elástica")
                         
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
                         
@@ -230,10 +236,8 @@ if modo == "👨‍⚕️ Área Clínica":
                             "pin": nuevo_pin, "active": True, "checkins": []
                         })
                         st.success(f"¡Sesión guardada con el PIN: {nuevo_pin}!")
-                        # Opcional: st.rerun() si prefieres que se limpie todo enseguida
 
         with sub_gestionar:
-            # Buscador de sesiones
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
             planes_filtrados = list(reversed(st.session_state.plans))
@@ -275,74 +279,79 @@ if modo == "👨‍⚕️ Área Clínica":
                         st.divider()
 
 # =============================================================
-# MÓDULO 2: PORTAL DEL PACIENTE
+# MÓDULO 2: PORTAL DEL PACIENTE (Pantalla por defecto para todos)
 # =============================================================
 else:
-    st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso Pacientes</h1><p style='color:#64756e;'>Introduce el código de tu sesión</p></div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión</h1><p style='color:#64756e;'>Introduce tu código PIN</p></div>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         pin_input = st.text_input("PIN de acceso", type="password", label_visibility="hidden", placeholder="Ej: 785518")
     
     if pin_input:
-        sesion_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
+        # VERIFICAR SI ES EL FISIO ENTRANDO AL PANEL DE CONTROL
+        if pin_input == PASSWORD_FISIO:
+            st.session_state.admin_mode = True
+            st.rerun()
         
-        if sesion_encontrada:
-            if not sesion_encontrada.get("active", True):
-                st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
-            else:
-                banner_html = f"""
-                <div style='background:#103d33; color:white; border-radius:16px; padding:25px; margin:22px 0;'>
-                    <h1 style='color:white !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
-                    <p style='color:#d1e4dc !important; margin:0;'>Sesión: {sesion_encontrada['title']}</p>
-                </div>
-                """
-                st.markdown(banner_html, unsafe_allow_html=True)
-                
-                for idx, e_id in enumerate(sesion_encontrada["exerciseIds"], 1):
-                    ej_data = get_exercise(e_id)
-                    if ej_data:
-                        st.markdown(f"<h2 style='font-size:17px; margin:20px 0 6px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
-                        
-                        inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
-                        
-                        # Manejo de las series/reps con compatibilidad si en el futuro cambias algo
-                        if isinstance(inst_data, dict):
-                            s = inst_data.get("series", "")
-                            r = inst_data.get("reps", "")
-                            n = inst_data.get("notes", "")
-                            
-                            detalles = []
-                            if s: detalles.append(f"<b>Series:</b> {s}")
-                            if r: detalles.append(f"<b>Reps:</b> {r}")
-                            if n: detalles.append(f"<b>Notas:</b> {n}")
-                            
-                            if detalles:
-                                info_html = " | ".join(detalles)
-                                st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{info_html}</div>", unsafe_allow_html=True)
-                        elif isinstance(inst_data, str) and inst_data:
-                            # Por si hay datos antiguos guardados como texto simple
-                            st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{inst_data}</div>", unsafe_allow_html=True)
-                            
-                        st.video(ej_data["videoUrl"])
-                        st.divider()
-                        
-                st.markdown("<h2 style='font-size:19px; margin:24px 0 13px;'>📝 Reporte de entrenamiento</h2>", unsafe_allow_html=True)
-                with st.form("feedback_form"):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        eva = st.slider("Escala EVA (Dolor 0-10)", 0, 10, 2)
-                    with col_b:
-                        borg = st.slider("Escala Borg (Esfuerzo 0-10)", 0, 10, 5)
-                    comentario = st.text_area("Comentarios (molestias, sensaciones)")
-                    
-                    if st.form_submit_button("Enviar Resultados", type="primary"):
-                        if "checkins" not in sesion_encontrada:
-                            sesion_encontrada["checkins"] = []
-                        sesion_encontrada["checkins"].append({
-                            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "eva": eva, "borg": borg, "comment": comentario
-                        })
-                        st.success("¡Registro enviado correctamente!")
+        # SI NO ES EL FISIO, BUSCAR SI EL PIN COINCIDE CON UNA SESIÓN
         else:
-            st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
+            sesion_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
+            
+            if sesion_encontrada:
+                if not sesion_encontrada.get("active", True):
+                    st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
+                else:
+                    banner_html = f"""
+                    <div style='background:#103d33; color:white; border-radius:16px; padding:25px; margin:22px 0;'>
+                        <h1 style='color:white !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
+                        <p style='color:#d1e4dc !important; margin:0;'>Sesión: {sesion_encontrada['title']}</p>
+                    </div>
+                    """
+                    st.markdown(banner_html, unsafe_allow_html=True)
+                    
+                    for idx, e_id in enumerate(sesion_encontrada["exerciseIds"], 1):
+                        ej_data = get_exercise(e_id)
+                        if ej_data:
+                            st.markdown(f"<h2 style='font-size:17px; margin:20px 0 6px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
+                            
+                            inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
+                            
+                            if isinstance(inst_data, dict):
+                                s = inst_data.get("series", "")
+                                r = inst_data.get("reps", "")
+                                n = inst_data.get("notes", "")
+                                
+                                detalles = []
+                                if s: detalles.append(f"<b>Series:</b> {s}")
+                                if r: detalles.append(f"<b>Reps:</b> {r}")
+                                if n: detalles.append(f"<b>Notas:</b> {n}")
+                                
+                                if detalles:
+                                    info_html = " | ".join(detalles)
+                                    st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{info_html}</div>", unsafe_allow_html=True)
+                            elif isinstance(inst_data, str) and inst_data:
+                                st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{inst_data}</div>", unsafe_allow_html=True)
+                                
+                            st.video(ej_data["videoUrl"])
+                            st.divider()
+                            
+                    st.markdown("<h2 style='font-size:19px; margin:24px 0 13px;'>📝 Reporte de entrenamiento</h2>", unsafe_allow_html=True)
+                    with st.form("feedback_form"):
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            eva = st.slider("Escala EVA (Dolor 0-10)", 0, 10, 2)
+                        with col_b:
+                            borg = st.slider("Escala Borg (Esfuerzo 0-10)", 0, 10, 5)
+                        comentario = st.text_area("Comentarios (molestias, sensaciones)")
+                        
+                        if st.form_submit_button("Enviar Resultados", type="primary"):
+                            if "checkins" not in sesion_encontrada:
+                                sesion_encontrada["checkins"] = []
+                            sesion_encontrada["checkins"].append({
+                                "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "eva": eva, "borg": borg, "comment": comentario
+                            })
+                            st.success("¡Registro enviado correctamente!")
+            else:
+                st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
