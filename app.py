@@ -102,7 +102,6 @@ if st.session_state.admin_mode:
 
     st.markdown("<h1>Panel de Control Clínico</h1>", unsafe_allow_html=True)
     
-    # Cambio de nombre: "Mis Sesiones" a "Sesiones"
     tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Sesiones", "📊 Check-ins"])
     
     # --- PESTAÑA PACIENTES ---
@@ -116,7 +115,6 @@ if st.session_state.admin_mode:
                         st.session_state.patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
                         st.success("¡Paciente añadido correctamente!")
 
-        # Contador y buscador de pacientes
         total_pacs = len(st.session_state.patients)
         st.markdown(f"<h3 style='margin-top:20px;'>Directorio y Perfiles ({total_pacs})</h3>", unsafe_allow_html=True)
         search_pac = st.text_input("🔍 Buscar paciente por nombre:")
@@ -175,7 +173,6 @@ if st.session_state.admin_mode:
                     else:
                         st.error("Rellena el nombre y la URL.")
         
-        # Buscador de ejercicios
         total_ejs = len(st.session_state.exercises)
         st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
         search_ej = st.text_input("🔍 Buscar ejercicio por nombre:")
@@ -183,7 +180,6 @@ if st.session_state.admin_mode:
         for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
             ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
             
-            # Filtro por búsqueda
             if search_ej:
                 q_ej = search_ej.lower()
                 ejs_cat = [e for e in ejs_cat if q_ej in e["name"].lower()]
@@ -212,7 +208,6 @@ if st.session_state.admin_mode:
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
-        # Reordenación de pestañas internas y cambio de nombre
         sub_gestionar, sub_crear = st.tabs(["⚙️ Sesiones Creadas", "📝 Crear Nueva Sesión"])
         
         with sub_gestionar:
@@ -320,10 +315,11 @@ else:
                 if not sesion_encontrada.get("active", True):
                     st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
                 else:
+                    # NUEVO DISEÑO DEL TÍTULO: Fondo claro, letras oscuras
                     banner_html = f"""
-                    <div style='background:#103d33; color:white; border-radius:16px; padding:25px; margin:22px 0;'>
-                        <h1 style='color:white !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
-                        <p style='color:#d1e4dc !important; margin:0;'>Sesión: {sesion_encontrada['title']}</p>
+                    <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin:22px 0;'>
+                        <h1 style='color:#103d33 !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
+                        <p style='color:#13765d !important; margin:0; font-size:18px; font-weight:bold;'>Sesión: {sesion_encontrada['title']}</p>
                     </div>
                     """
                     st.markdown(banner_html, unsafe_allow_html=True)
@@ -331,10 +327,11 @@ else:
                     for idx, e_id in enumerate(sesion_encontrada["exerciseIds"], 1):
                         ej_data = get_exercise(e_id)
                         if ej_data:
-                            st.markdown(f"<h2 style='font-size:17px; margin:20px 0 6px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
+                            st.markdown(f"<h2 style='font-size:20px; margin:20px 0 10px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
                             
                             inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
                             
+                            # NUEVO DISEÑO DE PAUTAS: Más grande y con nuevo título para notas
                             if isinstance(inst_data, dict):
                                 s = inst_data.get("series", "")
                                 r = inst_data.get("reps", "")
@@ -343,15 +340,19 @@ else:
                                 detalles = []
                                 if s: detalles.append(f"<b>Series:</b> {s}")
                                 if r: detalles.append(f"<b>Reps:</b> {r}")
-                                if n: detalles.append(f"<b>Notas:</b> {n}")
+                                if n: detalles.append(f"<b>Comentarios del fisio:</b> {n}")
                                 
                                 if detalles:
                                     info_html = " | ".join(detalles)
-                                    st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{info_html}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='color:#103d33; font-size:18px; margin-bottom:15px; background:#fff; border: 2px solid #e9f6f0; padding:15px; border-radius:10px;'>{info_html}</div>", unsafe_allow_html=True)
                             elif isinstance(inst_data, str) and inst_data:
-                                st.markdown(f"<div style='color:#64756e; font-size:14px; margin-bottom:10px; background:#f6f8f6; padding:10px; border-radius:8px;'>{inst_data}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color:#103d33; font-size:18px; margin-bottom:15px; background:#fff; border: 2px solid #e9f6f0; padding:15px; border-radius:10px;'>{inst_data}</div>", unsafe_allow_html=True)
+                            
+                            # NUEVO TAMAÑO DE VÍDEO: En columnas para que no ocupe todo el ancho en ordenador
+                            col_vid1, col_vid2 = st.columns([1.5, 1])
+                            with col_vid1:
+                                st.video(ej_data["videoUrl"])
                                 
-                            st.video(ej_data["videoUrl"])
                             st.divider()
                             
                     st.markdown("<h2 style='font-size:19px; margin:24px 0 13px;'>📝 Reporte de entrenamiento</h2>", unsafe_allow_html=True)
