@@ -1,7 +1,10 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 import datetime
 import random
 import uuid
+import json
 
 # Configuración básica
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="collapsed")
@@ -10,9 +13,10 @@ st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_sta
 # VARIABLES GLOBALES DE TU CLÍNICA
 # =============================================================
 PASSWORD_FISIO = "FISIO123"
+APP_URL = "https://tu-enlace.streamlit.app"  # Cambia por tu URL real de Streamlit
 
-# PON AQUÍ TU ENLACE REAL DE STREAMLIT (ej: "https://fisiosesion.streamlit.app")
-APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app/" 
+# Conexión con Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # =============================================================
 # INYECCIÓN DE CSS PERSONALIZADO 
@@ -48,49 +52,135 @@ if 'admin_mode' not in st.session_state:
     st.session_state.admin_mode = False
 
 # =============================================================
-# BASE DE DATOS SIMULADA
+# FUNCIONES DE LECTURA Y ESCRITURA EN GOOGLE SHEETS
 # =============================================================
-if 'patients' not in st.session_state:
-    st.session_state.patients = [
+def get_patients():
+    try:
+        df = conn.read(worksheet="pacientes", ttl=0)
+        df = df.dropna(how="all")
+        if df.empty: return []
+        return df.astype(str).to_dict("records")
+    except Exception:
+        return []
+
+def save_patients(patients_list):
+    df = pd.DataFrame(patients_list)
+    conn.update(worksheet="pacientes", data=df)
+
+def get_exercises():
+    try:
+        df = conn.read(worksheet="ejercicios", ttl=0)
+        df = df.dropna(how="all")
+        if df.empty: return []
+        return df.astype(str).to_dict("records")
+    except Exception:
+        return []
+
+def save_exercises(exercises_list):
+    df = pd.DataFrame(exercises_list)
+    conn.update(worksheet="ejercicios", data=df)
+
+def get_plans():
+    try:
+        df = conn.read(worksheet="sesiones", ttl=0)
+        df = df.dropna(how="all")
+        if df.empty: return []
+        records = df.astype(str).to_dict("records")
+        plans = []
+        for r in records:
+            e_ids = json.loads(r["exerciseIds"]) if r["exerciseIds"].startswith("[") else []
+            e_inst = json.loads(r["exerciseInstructions"]) if r["exerciseInstructions"].startswith("{") else {}
+            is_active = r.get("active", "True").lower() in ["true", "1", "yes"]
+            plans.append({
+                "id": str(r["id"]),
+                "patientId": str(r["patientId"]),
+                "title": str(r["title"]),
+                "exerciseIds": e_ids,
+                "exerciseInstructions": e_inst,
+                "pin": str(r["pin"]),
+                "active": is_active
+            })
+        return plans
+    except Exception:
+        return []
+
+def save_plans(plans_list):
+    formatted_plans = []
+    for p in plans_list:
+        formatted_plans.append({
+            "id": str(p["id"]),
+            "patientId": str(p["patientId"]),
+            "title": str(p["title"]),
+            "exerciseIds": json.dumps(p["exerciseIds"]),
+            "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
+            "pin": str(p["pin"]),
+            "active": str(p["active"])
+        })
+    df = pd.DataFrame(formatted_plans)
+    conn.update(worksheet="sesiones", data=df)
+
+def get_checkins():
+    try:
+        df = conn.read(worksheet="checkins", ttl=0)
+        df = df.dropna(how="all")
+        if df.empty: return []
+        return df.astype(str).to_dict("records")
+    except Exception:
+        return []
+
+def save_checkin_item(plan_id, date, eva, borg, comment):
+    checkins = get_checkins()
+    checkins.append({
+        "id": str(uuid.uuid4())[:4],
+        "planId": str(plan_id),
+        "date": str(date),
+        "eva": str(eva),
+        "borg": str(borg),
+        "comment": str(comment)
+    })
+    df = pd.DataFrame(checkins)
+    conn.update(worksheet="checkins", data=df)
+
+# =============================================================
+# CARGA INICIAL Y DATOS BASE
+# =============================================================
+patients = get_patients()
+exercises = get_exercises()
+plans = get_plans()
+checkins = get_checkins()
+
+# Datos iniciales si la hoja está completamente vacía
+if not patients and not exercises and not plans:
+    patients = [
         {"id": "765d", "name": "Faico Arzoz", "notes": "trabajo de fuerza general 3 dias/semana"},
         {"id": "debc", "name": "Ana Arzoz", "notes": "trabajo de fuerza general 2 dias/semana"},
         {"id": "49a7", "name": "Eduardo Rodriguez", "notes": ""}
     ]
-
-if 'exercises' not in st.session_state:
-    st.session_state.exercises = [
+    exercises = [
         {"id": "fc59", "name": "dead bug", "category": "CORE", "videoUrl": "https://www.youtube.com/watch?v=4XLEnwUr1d8"},
         {"id": "7769", "name": "abd cadera con goma (BIPE)", "category": "EEII", "videoUrl": "https://www.youtube.com/watch?v=wPM8icPu6H8"},
         {"id": "a91f", "name": "plancha lateral + abd cadera", "category": "EEII", "videoUrl": "https://www.youtube.com/watch?v=2TzR3A031E0"},
         {"id": "afca", "name": "flexiones", "category": "EESS", "videoUrl": "https://www.youtube.com/watch?v=IODxDxX7oi4"},
         {"id": "e033", "name": "movilidad de cadera 90-90", "category": "Estiramientos y movilidad", "videoUrl": "https://www.youtube.com/watch?v=2TzR3A031E0"}
     ]
-
-if 'plans' not in st.session_state:
-    st.session_state.plans = [
-        {
-            "id": "fdf8",
-            "patientId": "49a7",
-            "title": "menisco agosto",
-            "exerciseIds": ["7769", "a91f"],
-            "exerciseInstructions": {
-                "7769": {"series": "3", "reps": "12", "notes": "Goma verde"}, 
-                "a91f": {"series": "4", "reps": "8", "notes": "Sin prisa"}
-            },
-            "pin": "785518",
-            "active": True,
-            "checkins": []
-        }
-    ]
+    plans = [{
+        "id": "fdf8", "patientId": "49a7", "title": "menisco agosto",
+        "exerciseIds": ["7769", "a91f"],
+        "exerciseInstructions": {"7769": {"series": "3", "reps": "12", "notes": "Goma verde"}, "a91f": {"series": "4", "reps": "8", "notes": "Sin prisa"}},
+        "pin": "785518", "active": True
+    }]
+    save_patients(patients)
+    save_exercises(exercises)
+    save_plans(plans)
 
 def get_patient_name(p_id):
-    for p in st.session_state.patients:
-        if p["id"] == p_id: return p["name"]
+    for p in patients:
+        if str(p["id"]) == str(p_id): return p["name"]
     return "Paciente Eliminado"
 
 def get_exercise(e_id):
-    for e in st.session_state.exercises:
-        if e["id"] == e_id: return e
+    for e in exercises:
+        if str(e["id"]) == str(e_id): return e
     return None
 
 # =============================================================
@@ -115,25 +205,27 @@ if st.session_state.admin_mode:
                 new_p_notes = st.text_area("Notas clínicas:")
                 if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                     if new_p_name:
-                        st.session_state.patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
-                        st.success("¡Paciente añadido correctamente!")
+                        patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
+                        save_patients(patients)
+                        st.success("¡Paciente añadido y sincronizado!")
+                        st.rerun()
 
-        total_pacs = len(st.session_state.patients)
+        total_pacs = len(patients)
         st.markdown(f"<h3 style='margin-top:20px;'>Directorio y Perfiles ({total_pacs})</h3>", unsafe_allow_html=True)
         search_pac = st.text_input("🔍 Buscar paciente por nombre:")
         
-        pacs_filtrados = st.session_state.patients
+        pacs_filtrados = patients
         if search_pac:
             q_pac = search_pac.lower()
             pacs_filtrados = [p for p in pacs_filtrados if q_pac in p["name"].lower()]
 
         if not pacs_filtrados:
-            st.info("No se han encontrado pacientes con ese nombre.")
+            st.info("No se han encontrado pacientes.")
             
         for p in pacs_filtrados:
             with st.expander(f"👤 {p['name']}"):
                 st.markdown("#### 📋 Sesiones Asignadas")
-                sesiones_del_paciente = [pl for pl in st.session_state.plans if pl["patientId"] == p["id"]]
+                sesiones_del_paciente = [pl for pl in plans if str(pl["patientId"]) == str(p["id"])]
                 sesiones_activas = [pl for pl in sesiones_del_paciente if pl.get("active", True)]
                 sesiones_inactivas = [pl for pl in sesiones_del_paciente if not pl.get("active", True)]
                 
@@ -156,9 +248,10 @@ if st.session_state.admin_mode:
                 
                 c1, c2 = st.columns(2)
                 if c1.button("💾 Actualizar", key=f"upd_{p['id']}", type="primary"):
-                    p["name"] = edit_name; p["notes"] = edit_notes; st.rerun()
+                    p["name"] = edit_name; p["notes"] = edit_notes; save_patients(patients); st.rerun()
                 if c2.button("🗑️ Borrar", key=f"del_{p['id']}"):
-                    st.session_state.patients.remove(p); st.rerun()
+                    patients = [x for x in patients if str(x["id"]) != str(p["id"])]
+                    save_patients(patients); st.rerun()
 
     # --- PESTAÑA EJERCICIOS ---
     with tab_ej:
@@ -171,25 +264,24 @@ if st.session_state.admin_mode:
                 
                 if submitted_ej:
                     if new_e_name and new_e_url:
-                        st.session_state.exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
+                        exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
+                        save_exercises(exercises)
                         st.success("¡Ejercicio guardado correctamente!")
-                    else:
-                        st.error("Rellena el nombre y la URL.")
-        
-        total_ejs = len(st.session_state.exercises)
+                        st.rerun()
+
+        total_ejs = len(exercises)
         st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
         search_ej = st.text_input("🔍 Buscar ejercicio por nombre:")
         
         for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
-            ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
-            
+            ejs_cat = [e for e in exercises if e["category"] == cat]
             if search_ej:
                 q_ej = search_ej.lower()
                 ejs_cat = [e for e in ejs_cat if q_ej in e["name"].lower()]
             
             with st.expander(f"📁 {cat} ({len(ejs_cat)})"):
                 if not ejs_cat:
-                    st.write("No hay ejercicios que coincidan con la búsqueda en esta categoría.")
+                    st.write("No hay ejercicios en esta categoría.")
                 for e in ejs_cat:
                     c1, c2, c3 = st.columns([2.5, 1, 1])
                     c1.write(f"🔹 {e['name']}")
@@ -204,9 +296,10 @@ if st.session_state.admin_mode:
                             ed_url = st.text_input("URL", value=e["videoUrl"], key=f"eu_{e['id']}")
                             bc1, bc2 = st.columns(2)
                             if bc1.button("💾 Actualizar", type="primary", key=f"esv_{e['id']}"):
-                                e["name"] = ed_name; e["category"] = ed_cat; e["videoUrl"] = ed_url; st.rerun()
+                                e["name"] = ed_name; e["category"] = ed_cat; e["videoUrl"] = ed_url; save_exercises(exercises); st.rerun()
                             if bc2.button("🗑️ Borrar", key=f"edl_{e['id']}"):
-                                st.session_state.exercises.remove(e); st.rerun()
+                                exercises = [x for x in exercises if str(x["id"]) != str(e["id"])]
+                                save_exercises(exercises); st.rerun()
                     st.divider()
 
     # --- PESTAÑA SESIONES ---
@@ -216,7 +309,7 @@ if st.session_state.admin_mode:
         with sub_gestionar:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
-            planes_filtrados = list(reversed(st.session_state.plans))
+            planes_filtrados = list(reversed(plans))
             if search_query:
                 q = search_query.lower()
                 planes_filtrados = [pl for pl in planes_filtrados if q in pl["title"].lower() or q in get_patient_name(pl["patientId"]).lower()]
@@ -230,29 +323,35 @@ if st.session_state.admin_mode:
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
                         
-                        pl["active"] = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
-                            
+                        estado_actual = pl.get("active", True)
+                        nuevo_estado = st.toggle("Sesión Activa", value=estado_actual, key=f"tgl_{pl['id']}")
+                        if nuevo_estado != estado_actual:
+                            pl["active"] = nuevo_estado
+                            save_plans(plans)
+                            st.rerun()
+
                         c1, c2 = st.columns([3, 1])
                         with c1:
                             ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
                             if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
-                                pl["title"] = ed_tit; st.rerun()
+                                pl["title"] = ed_tit; save_plans(plans); st.rerun()
                         with c2:
                             st.write(""); st.write("")
                             if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
-                                st.session_state.plans.remove(pl); st.rerun()
+                                plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
+                                save_plans(plans); st.rerun()
                                 
         with sub_crear:
-            if not st.session_state.patients:
+            if not patients:
                 st.warning("Añade pacientes primero.")
             else:
-                paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in st.session_state.patients], format_func=get_patient_name)
+                paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name)
                 titulo_sesion = st.text_input("2. Título de la Sesión:")
                 
                 st.markdown("**3. Selecciona los ejercicios:**")
                 ejercicios_sel = []
                 for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
-                    ejs_cat = [e for e in st.session_state.exercises if e['category'] == cat]
+                    ejs_cat = [e for e in exercises if e['category'] == cat]
                     if ejs_cat:
                         st.markdown(f"<span style='font-size:11px; padding:5px 7px; background:#e9f6f0; color:#13765d; border-radius:50px; font-weight:bold;'>{cat}</span>", unsafe_allow_html=True)
                         for e in ejs_cat:
@@ -278,31 +377,34 @@ if st.session_state.admin_mode:
                 if st.button("💾 Generar Sesión", type="primary"):
                     if titulo_sesion and ejercicios_sel:
                         nuevo_pin = str(random.randint(100000, 999999))
-                        st.session_state.plans.append({
+                        plans.append({
                             "id": str(uuid.uuid4())[:4], "patientId": paciente_sel, "title": titulo_sesion,
                             "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
-                            "pin": nuevo_pin, "active": True, "checkins": []
+                            "pin": nuevo_pin, "active": True
                         })
-                        st.success(f"¡Sesión guardada! Lista para enviar.")
+                        save_plans(plans)
+                        st.success("¡Sesión guardada y sincronizada en la nube!")
                         
-                        # NUEVO: CAJA DE MENSAJE PARA WHATSAPP
                         nombre_paciente = get_patient_name(paciente_sel)
                         mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
-                        
-                        st.info("Copia el siguiente mensaje pulsando el icono de copiar (arriba a la derecha del recuadro) y pégalo en WhatsApp:")
+                        st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
 
     # --- PESTAÑA CHECK-INS ---
     with tab_res:
         st.markdown("<h1>Control de Cargas</h1>", unsafe_allow_html=True)
-        for plan in reversed(st.session_state.plans):
-            if plan.get("checkins"):
-                with st.expander(f"📁 {get_patient_name(plan['patientId'])} - {plan['title']}"):
-                    for checkin in reversed(plan["checkins"]):
-                        st.markdown(f"**📅 {checkin['date']}**")
-                        st.markdown(f"**EVA:** {checkin['eva']} / 10 | **Borg:** {checkin['borg']} / 10")
-                        st.markdown(f"*{checkin['comment']}*")
-                        st.divider()
+        if not checkins:
+            st.info("Aún no hay reportes registrados por pacientes.")
+        else:
+            for plan in reversed(plans):
+                c_plan = [c for c in checkins if str(c.get("planId")) == str(plan["id"])]
+                if c_plan:
+                    with st.expander(f"📁 {get_patient_name(plan['patientId'])} - {plan['title']}"):
+                        for ch in reversed(c_plan):
+                            st.markdown(f"**📅 {ch['date']}**")
+                            st.markdown(f"**EVA:** {ch['eva']} / 10 | **Borg:** {ch['borg']} / 10")
+                            st.markdown(f"*{ch['comment']}*")
+                            st.divider()
 
 # =============================================================
 # MÓDULO 2: PORTAL DEL PACIENTE
@@ -319,11 +421,11 @@ else:
             st.session_state.admin_mode = True
             st.rerun()
         else:
-            sesion_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
+            sesion_encontrada = next((p for p in plans if str(p["pin"]) == str(pin_input).strip()), None)
             
             if sesion_encontrada:
                 if not sesion_encontrada.get("active", True):
-                    st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
+                    st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada por tu fisioterapeuta.</div>", unsafe_allow_html=True)
                 else:
                     banner_html = f"""
                     <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin:22px 0;'>
@@ -338,7 +440,7 @@ else:
                         if ej_data:
                             st.markdown(f"<h2 style='font-size:20px; margin:20px 0 10px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
                             
-                            inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
+                            inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(str(e_id), {})
                             
                             if isinstance(inst_data, dict):
                                 s = inst_data.get("series", "")
@@ -372,12 +474,8 @@ else:
                         comentario = st.text_area("Comentarios (molestias, sensaciones)")
                         
                         if st.form_submit_button("Enviar Resultados", type="primary"):
-                            if "checkins" not in sesion_encontrada:
-                                sesion_encontrada["checkins"] = []
-                            sesion_encontrada["checkins"].append({
-                                "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "eva": eva, "borg": borg, "comment": comentario
-                            })
-                            st.success("¡Registro enviado correctamente!")
+                            fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                            save_checkin_item(sesion_encontrada["id"], fecha_hoy, eva, borg, comentario)
+                            st.success("¡Registro enviado correctamente a tu fisioterapeuta!")
             else:
                 st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
