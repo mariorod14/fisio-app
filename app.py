@@ -7,9 +7,12 @@ import uuid
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="collapsed")
 
 # =============================================================
-# CONTRASEÑA MAESTRA DEL FISIOTERAPEUTA
+# VARIABLES GLOBALES DE TU CLÍNICA
 # =============================================================
 PASSWORD_FISIO = "FISIO123"
+
+# PON AQUÍ TU ENLACE REAL DE STREAMLIT (ej: "https://fisiosesion.streamlit.app")
+APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app/" 
 
 # =============================================================
 # INYECCIÓN DE CSS PERSONALIZADO 
@@ -280,7 +283,14 @@ if st.session_state.admin_mode:
                             "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
                             "pin": nuevo_pin, "active": True, "checkins": []
                         })
-                        st.success(f"¡Sesión guardada con el PIN: {nuevo_pin}!")
+                        st.success(f"¡Sesión guardada! Lista para enviar.")
+                        
+                        # NUEVO: CAJA DE MENSAJE PARA WHATSAPP
+                        nombre_paciente = get_patient_name(paciente_sel)
+                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
+                        
+                        st.info("Copia el siguiente mensaje pulsando el icono de copiar (arriba a la derecha del recuadro) y pégalo en WhatsApp:")
+                        st.code(mensaje_whatsapp, language="markdown")
 
     # --- PESTAÑA CHECK-INS ---
     with tab_res:
@@ -315,7 +325,6 @@ else:
                 if not sesion_encontrada.get("active", True):
                     st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada.</div>", unsafe_allow_html=True)
                 else:
-                    # NUEVO DISEÑO DEL TÍTULO: Fondo claro, letras oscuras
                     banner_html = f"""
                     <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin:22px 0;'>
                         <h1 style='color:#103d33 !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
@@ -331,7 +340,6 @@ else:
                             
                             inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(e_id, {})
                             
-                            # NUEVO DISEÑO DE PAUTAS: Más grande y con nuevo título para notas
                             if isinstance(inst_data, dict):
                                 s = inst_data.get("series", "")
                                 r = inst_data.get("reps", "")
@@ -348,7 +356,6 @@ else:
                             elif isinstance(inst_data, str) and inst_data:
                                 st.markdown(f"<div style='color:#103d33; font-size:18px; margin-bottom:15px; background:#fff; border: 2px solid #e9f6f0; padding:15px; border-radius:10px;'>{inst_data}</div>", unsafe_allow_html=True)
                             
-                            # NUEVO TAMAÑO DE VÍDEO: En columnas para que no ocupe todo el ancho en ordenador
                             col_vid1, col_vid2 = st.columns([1.5, 1])
                             with col_vid1:
                                 st.video(ej_data["videoUrl"])
