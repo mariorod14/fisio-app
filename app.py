@@ -9,7 +9,6 @@ st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_sta
 # =============================================================
 # CONTRASEÑA MAESTRA DEL FISIOTERAPEUTA
 # =============================================================
-# Cambia "FISIO123" por la contraseña que tú quieras usar para acceder al Área Clínica
 PASSWORD_FISIO = "FISIO123"
 
 # =============================================================
@@ -41,7 +40,7 @@ estilo_css = """
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
-# Control de sesión (para saber si estás logueado como fisio)
+# Control de sesión
 if 'admin_mode' not in st.session_state:
     st.session_state.admin_mode = False
 
@@ -92,11 +91,10 @@ def get_exercise(e_id):
     return None
 
 # =============================================================
-# MÓDULO 1: ÁREA CLÍNICA (Solo visible si el PIN es el del fisio)
+# MÓDULO 1: ÁREA CLÍNICA
 # =============================================================
 if st.session_state.admin_mode:
     
-    # Botón para cerrar la sesión de fisio
     st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
     if st.sidebar.button("🔒 Cerrar Sesión Segura", type="primary"):
         st.session_state.admin_mode = False
@@ -104,7 +102,8 @@ if st.session_state.admin_mode:
 
     st.markdown("<h1>Panel de Control Clínico</h1>", unsafe_allow_html=True)
     
-    tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Mis Sesiones", "📊 Check-ins"])
+    # Cambio de nombre: "Mis Sesiones" a "Sesiones"
+    tab_pac, tab_ej, tab_pau, tab_res = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📁 Sesiones", "📊 Check-ins"])
     
     # --- PESTAÑA PACIENTES ---
     with tab_pac:
@@ -117,8 +116,20 @@ if st.session_state.admin_mode:
                         st.session_state.patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
                         st.success("¡Paciente añadido correctamente!")
 
-        st.markdown("<h3 style='margin-top:20px;'>Directorio y Perfiles</h3>", unsafe_allow_html=True)
-        for p in st.session_state.patients:
+        # Contador y buscador de pacientes
+        total_pacs = len(st.session_state.patients)
+        st.markdown(f"<h3 style='margin-top:20px;'>Directorio y Perfiles ({total_pacs})</h3>", unsafe_allow_html=True)
+        search_pac = st.text_input("🔍 Buscar paciente por nombre:")
+        
+        pacs_filtrados = st.session_state.patients
+        if search_pac:
+            q_pac = search_pac.lower()
+            pacs_filtrados = [p for p in pacs_filtrados if q_pac in p["name"].lower()]
+
+        if not pacs_filtrados:
+            st.info("No se han encontrado pacientes con ese nombre.")
+            
+        for p in pacs_filtrados:
             with st.expander(f"👤 {p['name']}"):
                 st.markdown("#### 📋 Sesiones Asignadas")
                 sesiones_del_paciente = [pl for pl in st.session_state.plans if pl["patientId"] == p["id"]]
@@ -164,13 +175,22 @@ if st.session_state.admin_mode:
                     else:
                         st.error("Rellena el nombre y la URL.")
         
+        # Buscador de ejercicios
         total_ejs = len(st.session_state.exercises)
         st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
+        search_ej = st.text_input("🔍 Buscar ejercicio por nombre:")
         
         for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
             ejs_cat = [e for e in st.session_state.exercises if e["category"] == cat]
             
+            # Filtro por búsqueda
+            if search_ej:
+                q_ej = search_ej.lower()
+                ejs_cat = [e for e in ejs_cat if q_ej in e["name"].lower()]
+            
             with st.expander(f"📁 {cat} ({len(ejs_cat)})"):
+                if not ejs_cat:
+                    st.write("No hay ejercicios que coincidan con la búsqueda en esta categoría.")
                 for e in ejs_cat:
                     c1, c2, c3 = st.columns([2.5, 1, 1])
                     c1.write(f"🔹 {e['name']}")
@@ -192,8 +212,38 @@ if st.session_state.admin_mode:
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
-        sub_crear, sub_gestionar = st.tabs(["📝 Crear Nueva Sesión", "⚙️ Gestionar Creadas"])
+        # Reordenación de pestañas internas y cambio de nombre
+        sub_gestionar, sub_crear = st.tabs(["⚙️ Sesiones Creadas", "📝 Crear Nueva Sesión"])
         
+        with sub_gestionar:
+            search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
+            
+            planes_filtrados = list(reversed(st.session_state.plans))
+            if search_query:
+                q = search_query.lower()
+                planes_filtrados = [pl for pl in planes_filtrados if q in pl["title"].lower() or q in get_patient_name(pl["patientId"]).lower()]
+            
+            if not planes_filtrados:
+                st.info("No se encontraron sesiones.")
+            else:
+                for pl in planes_filtrados:
+                    with st.container(border=True):
+                        st.markdown(f"#### {pl['title']}")
+                        st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
+                        st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
+                        
+                        pl["active"] = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
+                            
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
+                            if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
+                                pl["title"] = ed_tit; st.rerun()
+                        with c2:
+                            st.write(""); st.write("")
+                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
+                                st.session_state.plans.remove(pl); st.rerun()
+                                
         with sub_crear:
             if not st.session_state.patients:
                 st.warning("Añade pacientes primero.")
@@ -237,35 +287,6 @@ if st.session_state.admin_mode:
                         })
                         st.success(f"¡Sesión guardada con el PIN: {nuevo_pin}!")
 
-        with sub_gestionar:
-            search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
-            
-            planes_filtrados = list(reversed(st.session_state.plans))
-            if search_query:
-                q = search_query.lower()
-                planes_filtrados = [pl for pl in planes_filtrados if q in pl["title"].lower() or q in get_patient_name(pl["patientId"]).lower()]
-            
-            if not planes_filtrados:
-                st.info("No se encontraron sesiones.")
-            else:
-                for pl in planes_filtrados:
-                    with st.container(border=True):
-                        st.markdown(f"#### {pl['title']}")
-                        st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
-                        st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
-                        
-                        pl["active"] = st.toggle("Sesión Activa", value=pl.get("active", True), key=f"tgl_{pl['id']}")
-                            
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
-                            if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
-                                pl["title"] = ed_tit; st.rerun()
-                        with c2:
-                            st.write(""); st.write("")
-                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
-                                st.session_state.plans.remove(pl); st.rerun()
-
     # --- PESTAÑA CHECK-INS ---
     with tab_res:
         st.markdown("<h1>Control de Cargas</h1>", unsafe_allow_html=True)
@@ -279,7 +300,7 @@ if st.session_state.admin_mode:
                         st.divider()
 
 # =============================================================
-# MÓDULO 2: PORTAL DEL PACIENTE (Pantalla por defecto para todos)
+# MÓDULO 2: PORTAL DEL PACIENTE
 # =============================================================
 else:
     st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión</h1><p style='color:#64756e;'>Introduce tu código PIN</p></div>", unsafe_allow_html=True)
@@ -289,12 +310,9 @@ else:
         pin_input = st.text_input("PIN de acceso", type="password", label_visibility="hidden", placeholder="Ej: 785518")
     
     if pin_input:
-        # VERIFICAR SI ES EL FISIO ENTRANDO AL PANEL DE CONTROL
         if pin_input == PASSWORD_FISIO:
             st.session_state.admin_mode = True
             st.rerun()
-        
-        # SI NO ES EL FISIO, BUSCAR SI EL PIN COINCIDE CON UNA SESIÓN
         else:
             sesion_encontrada = next((p for p in st.session_state.plans if p["pin"] == pin_input), None)
             
