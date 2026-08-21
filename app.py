@@ -35,7 +35,7 @@ estilo_css = """
     .stApp { background-color: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; }
     h1, h2, h3, h4, p, span, label { color: var(--ink) !important; }
     button[data-testid="baseButton-primary"] { background-color: var(--green) !important; color: white !important; border-radius: 9px !important; }
-    .stTextInput input, .stTextArea textarea { border: 1px solid var(--line) !important; border-radius: 9px !important; }
+    .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
 </style>
 """
@@ -50,7 +50,7 @@ if 'admin_mode' not in st.session_state:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
 # =============================================================
-# FUNCIONES DE LECTURA Y ESCRITURA (ROBUSTAS)
+# FUNCIONES DE LECTURA Y ESCRITURA
 # =============================================================
 def get_patients():
     try:
@@ -79,7 +79,7 @@ def get_exercises():
         for _, r in df.iterrows():
             e_id = str(r.get("id", ""))
             if e_id.endswith(".0"): e_id = e_id[:-2]
-            records.append({"id": e_id, "name": str(r.get("name", "")), "category": str(r.get("category", "")), "videoUrl": str(r.get("videoUrl", ""))})
+            records.append({"id": e_id, "name": str(r.get("name", "")), "videoUrl": str(r.get("videoUrl", "")), "category": str(r.get("category", ""))})
         return records
     except Exception as e:
         return []
@@ -96,10 +96,8 @@ def get_plans():
         for _, r in df.iterrows():
             p_id = str(r.get("id", ""))
             if p_id.endswith(".0"): p_id = p_id[:-2]
-            
             pat_id = str(r.get("patientId", ""))
             if pat_id.endswith(".0"): pat_id = pat_id[:-2]
-            
             pin_val = str(r.get("pin", ""))
             if pin_val.endswith(".0"): pin_val = pin_val[:-2]
             
@@ -269,59 +267,57 @@ if st.session_state.admin_mode:
                     patients = [x for x in patients if str(x["id"]) != str(p["id"])]
                     save_patients(patients); st.rerun()
 
-    # --- PESTAÑA EJERCICIOS ---
+    # --- PESTAÑA EJERCICIOS (NUEVA VERSIÓN TABLA COMPACTA) ---
     with tab_ej:
-        with st.expander("➕ Añadir Nuevo Ejercicio", expanded=False):
-            with st.form("nuevo_ejercicio_form", clear_on_submit=True):
-                new_e_name = st.text_input("Nombre del ejercicio:")
-                new_e_cat = st.selectbox("Categoría:", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"])
-                new_e_url = st.text_input("URL del Vídeo:")
-                submitted_ej = st.form_submit_button("Guardar Ejercicio", type="primary")
-                
-                if submitted_ej:
-                    if new_e_name and new_e_url:
-                        exercises.append({"id": str(uuid.uuid4())[:4], "name": new_e_name, "category": new_e_cat, "videoUrl": new_e_url})
-                        save_exercises(exercises)
-                        st.success("¡Ejercicio guardado correctamente!")
-                        st.rerun()
+        st.markdown("<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:14px; color:var(--muted); margin-top:-10px;'>💡 <b>Doble clic en cualquier celda</b> para editar el nombre, enlace o categoría. <br>Para crear un nuevo ejercicio, haz doble clic en la última fila vacía de abajo. Para borrar, selecciona la parte izquierda de la fila y pulsa la tecla Suprimir.</p>", unsafe_allow_html=True)
 
-        total_ejs = len(exercises)
-        st.markdown(f"<h3 style='margin-top:20px;'>Catálogo de Ejercicios ({total_ejs})</h3>", unsafe_allow_html=True)
-        search_ej = st.text_input("🔍 Buscar ejercicio por nombre:")
+        df_ex = pd.DataFrame(exercises)
+        if df_ex.empty:
+            df_ex = pd.DataFrame(columns=["id", "name", "videoUrl", "category"])
+        else:
+            # Forzamos el orden de las columnas: id, name, videoUrl, category
+            df_ex = df_ex[["id", "name", "videoUrl", "category"]]
+
+        # Mostrar tabla editable (súper compacta)
+        edited_df = st.data_editor(
+            df_ex,
+            column_config={
+                "id": None, # Ocultamos el ID interno al usuario
+                "name": st.column_config.TextColumn("Nombre del Ejercicio", required=True, width="medium"),
+                "videoUrl": st.column_config.TextColumn("Enlace de YouTube", required=True, width="large"),
+                "category": st.column_config.SelectboxColumn("Categoría", options=["CORE", "EEII", "EESS", "Estiramientos y movilidad"], required=True, width="small")
+            },
+            hide_index=True,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_ejercicios_v1"
+        )
         
-        for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
-            ejs_cat = [e for e in exercises if e["category"] == cat]
-            if search_ej:
-                q_ej = search_ej.lower()
-                ejs_cat = [e for e in ejs_cat if q_ej in e["name"].lower()]
-            
-            with st.expander(f"📁 {cat} ({len(ejs_cat)})"):
-                if not ejs_cat:
-                    st.write("No hay ejercicios en esta categoría.")
-                for e in ejs_cat:
-                    # NUEVO DISEÑO COMPACTO Y CON URL DIRECTA
-                    c1, c2, c3 = st.columns([2.5, 3.5, 1])
-                    with c1:
-                        st.markdown(f"<div style='padding-top:10px;'>🔹 <b>{e['name']}</b></div>", unsafe_allow_html=True)
-                    with c2:
-                        st.markdown(f"<div style='padding-top:10px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'><a href='{e['videoUrl']}' target='_blank'>{e['videoUrl']}</a></div>", unsafe_allow_html=True)
-                    with c3:
-                        editar_modo = st.toggle("Editar", key=f"tgl_{e['id']}")
+        # Lógica para detectar cambios y guardar
+        df_ex_str = df_ex.fillna("").astype(str)
+        edited_df_str = edited_df.fillna("").astype(str)
+        
+        if not df_ex_str.equals(edited_df_str):
+            st.markdown("<div style='background:#fff3cd; color:#856404; padding:10px; border-radius:8px; margin-bottom:10px;'>⚠️ <b>Tienes cambios sin guardar.</b> Pulsa el botón de abajo para confirmarlos.</div>", unsafe_allow_html=True)
+            if st.button("💾 Guardar Cambios en Ejercicios", type="primary"):
+                nuevos_ejercicios = []
+                for _, r in edited_df.iterrows():
+                    eid = r.get("id")
+                    if not eid or pd.isna(eid) or eid == "":
+                        eid = str(uuid.uuid4())[:4]
                     
-                    if editar_modo:
-                        with st.container(border=True):
-                            ed_name = st.text_input("Nombre", value=e["name"], key=f"en_{e['id']}")
-                            ed_cat = st.selectbox("Cat", ["CORE", "EEII", "EESS", "Estiramientos y movilidad"], index=["CORE", "EEII", "EESS", "Estiramientos y movilidad"].index(e["category"]), key=f"ec_{e['id']}")
-                            ed_url = st.text_input("URL", value=e["videoUrl"], key=f"eu_{e['id']}")
-                            bc1, bc2 = st.columns(2)
-                            if bc1.button("💾 Actualizar", type="primary", key=f"esv_{e['id']}"):
-                                e["name"] = ed_name; e["category"] = ed_cat; e["videoUrl"] = ed_url; save_exercises(exercises); st.rerun()
-                            if bc2.button("🗑️ Borrar", key=f"edl_{e['id']}"):
-                                exercises = [x for x in exercises if str(x["id"]) != str(e["id"])]
-                                save_exercises(exercises); st.rerun()
-                                
-                    # Separador estrecho para ahorrar espacio vertical
-                    st.markdown("<hr style='margin: 5px 0px 5px 0px; border: 0; border-top: 1px solid #dce7e2;'>", unsafe_allow_html=True)
+                    # Solo guardamos filas que tengan al menos nombre o URL
+                    if str(r.get("name", "")) != "nan" or str(r.get("videoUrl", "")) != "nan":
+                        nuevos_ejercicios.append({
+                            "id": str(eid),
+                            "name": str(r.get("name", "")).replace("nan", ""),
+                            "videoUrl": str(r.get("videoUrl", "")).replace("nan", ""),
+                            "category": str(r.get("category", "")).replace("nan", "")
+                        })
+                save_exercises(nuevos_ejercicios)
+                st.success("¡Base de datos de ejercicios actualizada!")
+                st.rerun()
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
@@ -367,22 +363,31 @@ if st.session_state.admin_mode:
                 paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name)
                 titulo_sesion = st.text_input("2. Título de la Sesión:")
                 
-                st.markdown("**3. Selecciona los ejercicios:**")
-                ejercicios_sel = []
-                for cat in ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]:
-                    ejs_cat = [e for e in exercises if e['category'] == cat]
-                    if ejs_cat:
-                        st.markdown(f"<span style='font-size:11px; padding:5px 7px; background:#e9f6f0; color:#13765d; border-radius:50px; font-weight:bold;'>{cat}</span>", unsafe_allow_html=True)
-                        for e in ejs_cat:
-                            if st.checkbox(e["name"], key=f"chk_{e['id']}"):
-                                ejercicios_sel.append(e["id"])
+                # --- NUEVA SELECCIÓN Y ORDENACIÓN DE EJERCICIOS ---
+                st.markdown("**3. Selecciona y ordena los ejercicios:**")
+                st.markdown("<p style='font-size: 13px; color: var(--muted); margin-top:-10px;'>Haz clic para buscarlos y añadirlos. <b>Aparecerán en el orden en que los cliques</b>. Puedes arrastrar las etiquetas grises para reordenarlos.</p>", unsafe_allow_html=True)
+                
+                # Preparamos las opciones con un formato bonito: "Nombre (Categoría)"
+                ej_options = {f"{e['name']}  ({e['category']})": e['id'] for e in exercises}
+                
+                selected_names = st.multiselect(
+                    "Buscador de ejercicios",
+                    options=list(ej_options.keys()),
+                    label_visibility="collapsed",
+                    placeholder="Escribe aquí o selecciona de la lista..."
+                )
+                
+                # Recuperamos los IDs basándonos en los nombres seleccionados, RESPETANDO EL ORDEN del multiselect
+                ejercicios_sel = [ej_options[name] for name in selected_names]
                 
                 instrucciones_dict = {}
                 if ejercicios_sel:
-                    st.markdown("**4. Configuración de Ejercicios:**")
-                    for e_id in ejercicios_sel:
+                    st.markdown("**4. Configuración (El orden mostrado es el que verá el paciente):**")
+                    # Iteramos respetando el orden elegido por el fisio
+                    for idx, e_id in enumerate(ejercicios_sel):
                         ej_name = get_exercise(e_id)['name']
-                        st.markdown(f"**{ej_name}**")
+                        # Mostramos el número de orden delante del nombre
+                        st.markdown(f"**{idx + 1}. {ej_name}**") 
                         col_s, col_r, col_n = st.columns([1, 1, 2])
                         with col_s:
                             s = st.text_input("Series", key=f"ser_{e_id}", placeholder="Ej: 3")
@@ -408,6 +413,8 @@ if st.session_state.admin_mode:
                         mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
+                    elif not ejercicios_sel:
+                        st.warning("Debes seleccionar al menos un ejercicio.")
 
     # --- PESTAÑA CHECK-INS ---
     with tab_res:
