@@ -50,12 +50,23 @@ if 'admin_mode' not in st.session_state:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
 # =============================================================
-# FUNCIONES DE LECTURA Y ESCRITURA
+# FUNCIONES DE LECTURA Y ESCRITURA (ROBUSTAS CONTRA TIPOS NUMÉRICOS)
 # =============================================================
 def get_patients():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="pacientes", ttl=600)
-        return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
+        if df.empty: return []
+        df = df.dropna(how="all")
+        records = []
+        for _, r in df.iterrows():
+            p_id = str(r.get("id", ""))
+            if p_id.endswith(".0"): p_id = p_id[:-2]
+            records.append({
+                "id": p_id,
+                "name": str(r.get("name", "")),
+                "notes": str(r.get("notes", ""))
+            })
+        return records
     except Exception as e:
         return []
 
@@ -66,7 +77,19 @@ def save_patients(patients_list):
 def get_exercises():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="ejercicios", ttl=600)
-        return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
+        if df.empty: return []
+        df = df.dropna(how="all")
+        records = []
+        for _, r in df.iterrows():
+            e_id = str(r.get("id", ""))
+            if e_id.endswith(".0"): e_id = e_id[:-2]
+            records.append({
+                "id": e_id,
+                "name": str(r.get("name", "")),
+                "category": str(r.get("category", "")),
+                "videoUrl": str(r.get("videoUrl", ""))
+            })
+        return records
     except Exception as e:
         return []
 
@@ -80,14 +103,56 @@ def get_plans():
         if df.empty: return []
         plans = []
         for _, r in df.iterrows():
+            p_id = str(r.get("id", ""))
+            if p_id.endswith(".0"): p_id = p_id[:-2]
+            
+            pat_id = str(r.get("patientId", ""))
+            if pat_id.endswith(".0"): pat_id = pat_id[:-2]
+            
+            pin_val = str(r.get("pin", ""))
+            if pin_val.endswith(".0"): pin_val = pin_val[:-2]
+            
+            # Limpiar exerciseIds por si traen .0
+            ex_ids_raw = r.get("exerciseIds", "[]")
+            if isinstance(ex_ids_raw, str) and ex_ids_raw.startswith("["):
+                try:
+                    ex_ids = json.loads(ex_ids_raw)
+                    ex_ids = [str(x)[:-2] if str(x).endswith(".0") else str(x) for x in ex_ids]
+                except:
+                    ex_ids = []
+            else:
+                ex_ids = []
+
+            # Limpiar instrucciones
+            inst_raw = r.get("exerciseInstructions", "{}")
+            if isinstance(inst_raw, str) and inst_raw.startswith("{"):
+                try:
+                    insts = json.loads(inst_raw)
+                    cleaned_insts = {}
+                    for k, v in insts.items():
+                        clean_k = str(k)[:-2] if str(k).endswith(".0") else str(k)
+                        cleaned_insts[clean_k] = v
+                    insts = cleaned_insts
+                except:
+                    insts = {}
+            else:
+                insts = {}
+
+            # Estado activo robusto
+            active_val = r.get("active", True)
+            if isinstance(active_val, bool):
+                is_active = active_val
+            else:
+                is_active = str(active_val).lower().strip() in ["true", "1", "yes", "t"]
+
             plans.append({
-                "id": str(r["id"]), 
-                "patientId": str(r["patientId"]), 
-                "title": str(r["title"]),
-                "exerciseIds": json.loads(r["exerciseIds"]) if isinstance(r["exerciseIds"], str) and r["exerciseIds"].startswith("[") else [],
-                "exerciseInstructions": json.loads(r["exerciseInstructions"]) if isinstance(r["exerciseInstructions"], str) and r["exerciseInstructions"].startswith("{") else {},
-                "pin": str(r["pin"]), 
-                "active": str(r["active"]).lower() in ["true", "1", "yes"]
+                "id": p_id, 
+                "patientId": pat_id, 
+                "title": str(r.get("title", "")),
+                "exerciseIds": ex_ids, 
+                "exerciseInstructions": insts,
+                "pin": pin_val, 
+                "active": is_active
             })
         return plans
     except Exception as e:
@@ -111,7 +176,23 @@ def save_plans(plans_list):
 def get_checkins():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="checkins", ttl=600)
-        return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
+        if df.empty: return []
+        df = df.dropna(how="all")
+        records = []
+        for _, r in df.iterrows():
+            c_id = str(r.get("id", ""))
+            if c_id.endswith(".0"): c_id = c_id[:-2]
+            p_id = str(r.get("planId", ""))
+            if p_id.endswith(".0"): p_id = p_id[:-2]
+            records.append({
+                "id": c_id,
+                "planId": p_id,
+                "date": str(r.get("date", "")),
+                "eva": str(r.get("eva", "")),
+                "borg": str(r.get("borg", "")),
+                "comment": str(r.get("comment", ""))
+            })
+        return records
     except Exception as e:
         return []
 
@@ -439,6 +520,6 @@ else:
                         if st.form_submit_button("Enviar Resultados", type="primary"):
                             fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
                             save_checkin_item(sesion_encontrada["id"], fecha_hoy, eva, borg, comentario)
-                            st.success("¡Registro enviado correctamente à tu fisioterapeuta!")
+                            st.success("¡Registro enviado correctamente a tu fisioterapeuta!")
             else:
                 st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
