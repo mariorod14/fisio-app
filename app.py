@@ -61,6 +61,7 @@ def get_patients():
 
 def save_patients(patients_list):
     conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list))
+    st.cache_data.clear()
 
 def get_exercises():
     try:
@@ -71,6 +72,7 @@ def get_exercises():
 
 def save_exercises(exercises_list):
     conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list))
+    st.cache_data.clear()
 
 def get_plans():
     try:
@@ -104,6 +106,7 @@ def save_plans(plans_list):
             "active": str(p["active"])
         })
     conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted))
+    st.cache_data.clear()
 
 def get_checkins():
     try:
@@ -123,6 +126,7 @@ def save_checkin_item(plan_id, date, eva, borg, comment):
         "comment": str(comment)
     })
     conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins))
+    st.cache_data.clear()
 
 # =============================================================
 # CARGA DE DATOS
