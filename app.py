@@ -20,7 +20,7 @@ conn = get_conn()
 
 # VARIABLES GLOBALES
 PASSWORD_FISIO = "FISIO123"
-APP_URL = "https://tu-enlace.streamlit.app"  # Asegúrate de poner aquí tu URL real
+APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  # URL real de tu aplicación
 
 # =============================================================
 # INYECCIÓN DE CSS
@@ -439,6 +439,6 @@ else:
                         if st.form_submit_button("Enviar Resultados", type="primary"):
                             fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
                             save_checkin_item(sesion_encontrada["id"], fecha_hoy, eva, borg, comentario)
-                            st.success("¡Registro enviado correctamente a tu fisioterapeuta!")
+                            st.success("¡Registro enviado correctamente à tu fisioterapeuta!")
             else:
                 st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
