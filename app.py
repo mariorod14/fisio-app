@@ -45,61 +45,84 @@ if 'admin_mode' not in st.session_state:
     st.session_state.admin_mode = False
 
 # =============================================================
+# URL DIRECTA DE LA HOJA DE CÁLCULO
+# =============================================================
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
+
+# =============================================================
 # FUNCIONES DE LECTURA Y ESCRITURA
 # =============================================================
 def get_patients():
     try:
-        df = conn.read(worksheet="pacientes", ttl=600) # ttl aumentado para mejorar velocidad
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="pacientes", ttl=600)
         return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
-    except: return []
+    except Exception as e:
+        return []
 
 def save_patients(patients_list):
-    conn.update(worksheet="pacientes", data=pd.DataFrame(patients_list))
+    conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list))
 
 def get_exercises():
     try:
-        df = conn.read(worksheet="ejercicios", ttl=600)
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="ejercicios", ttl=600)
         return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
-    except: return []
+    except Exception as e:
+        return []
 
 def save_exercises(exercises_list):
-    conn.update(worksheet="ejercicios", data=pd.DataFrame(exercises_list))
+    conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list))
 
 def get_plans():
     try:
-        df = conn.read(worksheet="sesiones", ttl=600)
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="sesiones", ttl=600)
         if df.empty: return []
         plans = []
         for _, r in df.iterrows():
             plans.append({
-                "id": str(r["id"]), "patientId": str(r["patientId"]), "title": str(r["title"]),
+                "id": str(r["id"]), 
+                "patientId": str(r["patientId"]), 
+                "title": str(r["title"]),
                 "exerciseIds": json.loads(r["exerciseIds"]) if isinstance(r["exerciseIds"], str) and r["exerciseIds"].startswith("[") else [],
                 "exerciseInstructions": json.loads(r["exerciseInstructions"]) if isinstance(r["exerciseInstructions"], str) and r["exerciseInstructions"].startswith("{") else {},
-                "pin": str(r["pin"]), "active": str(r["active"]).lower() in ["true", "1", "yes"]
+                "pin": str(r["pin"]), 
+                "active": str(r["active"]).lower() in ["true", "1", "yes"]
             })
         return plans
-    except: return []
+    except Exception as e:
+        return []
 
 def save_plans(plans_list):
     formatted = []
     for p in plans_list:
         formatted.append({
-            "id": str(p["id"]), "patientId": str(p["patientId"]), "title": str(p["title"]),
-            "exerciseIds": json.dumps(p["exerciseIds"]), "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
-            "pin": str(p["pin"]), "active": str(p["active"])
+            "id": str(p["id"]), 
+            "patientId": str(p["patientId"]), 
+            "title": str(p["title"]),
+            "exerciseIds": json.dumps(p["exerciseIds"]), 
+            "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
+            "pin": str(p["pin"]), 
+            "active": str(p["active"])
         })
-    conn.update(worksheet="sesiones", data=pd.DataFrame(formatted))
+    conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted))
 
 def get_checkins():
     try:
-        df = conn.read(worksheet="checkins", ttl=600)
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="checkins", ttl=600)
         return df.dropna(how="all").astype(str).to_dict("records") if not df.empty else []
-    except: return []
+    except Exception as e:
+        return []
 
 def save_checkin_item(plan_id, date, eva, borg, comment):
     checkins = get_checkins()
-    checkins.append({"id": str(uuid.uuid4())[:4], "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
-    conn.update(worksheet="checkins", data=pd.DataFrame(checkins))
+    checkins.append({
+        "id": str(uuid.uuid4())[:4], 
+        "planId": str(plan_id), 
+        "date": str(date), 
+        "eva": str(eva), 
+        "borg": str(borg), 
+        "comment": str(comment)
+    })
+    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins))
 
 # =============================================================
 # CARGA DE DATOS
