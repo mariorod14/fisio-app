@@ -20,7 +20,7 @@ conn = get_conn()
 
 # VARIABLES GLOBALES
 PASSWORD_FISIO = "FISIO123"
-APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  # URL real de tu aplicación
+APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  
 
 # =============================================================
 # INYECCIÓN DE CSS
@@ -50,7 +50,7 @@ if 'admin_mode' not in st.session_state:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
 # =============================================================
-# FUNCIONES DE LECTURA Y ESCRITURA (ROBUSTAS CONTRA TIPOS NUMÉRICOS)
+# FUNCIONES DE LECTURA Y ESCRITURA (ROBUSTAS)
 # =============================================================
 def get_patients():
     try:
@@ -61,11 +61,7 @@ def get_patients():
         for _, r in df.iterrows():
             p_id = str(r.get("id", ""))
             if p_id.endswith(".0"): p_id = p_id[:-2]
-            records.append({
-                "id": p_id,
-                "name": str(r.get("name", "")),
-                "notes": str(r.get("notes", ""))
-            })
+            records.append({"id": p_id, "name": str(r.get("name", "")), "notes": str(r.get("notes", ""))})
         return records
     except Exception as e:
         return []
@@ -83,12 +79,7 @@ def get_exercises():
         for _, r in df.iterrows():
             e_id = str(r.get("id", ""))
             if e_id.endswith(".0"): e_id = e_id[:-2]
-            records.append({
-                "id": e_id,
-                "name": str(r.get("name", "")),
-                "category": str(r.get("category", "")),
-                "videoUrl": str(r.get("videoUrl", ""))
-            })
+            records.append({"id": e_id, "name": str(r.get("name", "")), "category": str(r.get("category", "")), "videoUrl": str(r.get("videoUrl", ""))})
         return records
     except Exception as e:
         return []
@@ -112,7 +103,6 @@ def get_plans():
             pin_val = str(r.get("pin", ""))
             if pin_val.endswith(".0"): pin_val = pin_val[:-2]
             
-            # Limpiar exerciseIds por si traen .0
             ex_ids_raw = r.get("exerciseIds", "[]")
             if isinstance(ex_ids_raw, str) and ex_ids_raw.startswith("["):
                 try:
@@ -123,7 +113,6 @@ def get_plans():
             else:
                 ex_ids = []
 
-            # Limpiar instrucciones
             inst_raw = r.get("exerciseInstructions", "{}")
             if isinstance(inst_raw, str) and inst_raw.startswith("{"):
                 try:
@@ -138,21 +127,14 @@ def get_plans():
             else:
                 insts = {}
 
-            # Estado activo robusto
-            active_val = r.get("active", True)
-            if isinstance(active_val, bool):
-                is_active = active_val
-            else:
-                is_active = str(active_val).lower().strip() in ["true", "1", "yes", "t"]
-
+            # NOTA: Ya no leemos ni guardamos el estado "active".
             plans.append({
                 "id": p_id, 
                 "patientId": pat_id, 
                 "title": str(r.get("title", "")),
                 "exerciseIds": ex_ids, 
                 "exerciseInstructions": insts,
-                "pin": pin_val, 
-                "active": is_active
+                "pin": pin_val
             })
         return plans
     except Exception as e:
@@ -167,8 +149,7 @@ def save_plans(plans_list):
             "title": str(p["title"]),
             "exerciseIds": json.dumps(p["exerciseIds"]), 
             "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
-            "pin": str(p["pin"]), 
-            "active": str(p["active"])
+            "pin": str(p["pin"])
         })
     conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted))
     st.cache_data.clear()
@@ -184,28 +165,14 @@ def get_checkins():
             if c_id.endswith(".0"): c_id = c_id[:-2]
             p_id = str(r.get("planId", ""))
             if p_id.endswith(".0"): p_id = p_id[:-2]
-            records.append({
-                "id": c_id,
-                "planId": p_id,
-                "date": str(r.get("date", "")),
-                "eva": str(r.get("eva", "")),
-                "borg": str(r.get("borg", "")),
-                "comment": str(r.get("comment", ""))
-            })
+            records.append({"id": c_id, "planId": p_id, "date": str(r.get("date", "")), "eva": str(r.get("eva", "")), "borg": str(r.get("borg", "")), "comment": str(r.get("comment", ""))})
         return records
     except Exception as e:
         return []
 
 def save_checkin_item(plan_id, date, eva, borg, comment):
     checkins = get_checkins()
-    checkins.append({
-        "id": str(uuid.uuid4())[:4], 
-        "planId": str(plan_id), 
-        "date": str(date), 
-        "eva": str(eva), 
-        "borg": str(borg), 
-        "comment": str(comment)
-    })
+    checkins.append({"id": str(uuid.uuid4())[:4], "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
     conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins))
     st.cache_data.clear()
 
@@ -269,21 +236,30 @@ if st.session_state.admin_mode:
         for p in pacs_filtrados:
             with st.expander(f"👤 {p['name']}"):
                 st.markdown("#### 📋 Sesiones Asignadas")
+                # Filtramos todas las sesiones del paciente
                 sesiones_del_paciente = [pl for pl in plans if str(pl["patientId"]) == str(p["id"])]
-                sesiones_activas = [pl for pl in sesiones_del_paciente if pl.get("active", True)]
-                sesiones_inactivas = [pl for pl in sesiones_del_paciente if not pl.get("active", True)]
                 
-                if sesiones_activas:
-                    st.markdown("<div style='background:#eaf7f0; color:#13765d; padding:11px; border-radius:9px; margin-bottom:10px;'><b>🟢 Sesiones Activas</b></div>", unsafe_allow_html=True)
-                    for pa in sesiones_activas:
-                        st.write(f"- **{pa['title']}** (PIN: {pa['pin']})")
+                if sesiones_del_paciente:
+                    # La última sesión añadida es la actual
+                    sesion_actual = sesiones_del_paciente[-1]
+                    # El resto son el historial
+                    historial = sesiones_del_paciente[:-1]
+                    
+                    st.markdown("<div style='background:#eaf7f0; color:#13765d; padding:11px; border-radius:9px; margin-bottom:10px;'><b>🟢 Sesión Actual</b></div>", unsafe_allow_html=True)
+                    st.write(f"- **{sesion_actual['title']}** (PIN: {sesion_actual['pin']})")
+                    
+                    if historial:
+                        st.markdown("<div style='background:#f6f8f6; color:#64756e; padding:11px; border-radius:9px; margin-top:10px; margin-bottom:10px;'><b>⚪ Historial (Antiguas)</b></div>", unsafe_allow_html=True)
+                        for pi in reversed(historial): # Mostramos las más recientes primero
+                            nombres_ejercicios = []
+                            for eid in pi['exerciseIds']:
+                                ej_data = get_exercise(eid)
+                                if ej_data: nombres_ejercicios.append(ej_data['name'])
+                            
+                            ejs_str = ", ".join(nombres_ejercicios) if nombres_ejercicios else "Sin ejercicios"
+                            st.write(f"- **{pi['title']}** *(Ejercicios: {ejs_str})*")
                 else:
-                    st.write("No tiene ninguna sesión activa.")
-
-                if sesiones_inactivas:
-                    st.markdown("<div style='background:#f6f8f6; color:#64756e; padding:11px; border-radius:9px; margin-top:10px; margin-bottom:10px;'><b>⚪ Historial (Desactivadas)</b></div>", unsafe_allow_html=True)
-                    for pi in sesiones_inactivas:
-                        st.write(f"- {pi['title']} (PIN: {pi['pin']})")
+                    st.write("No tiene ninguna sesión todavía.")
 
                 st.divider()
                 st.markdown("#### ⚙️ Ajustes del Paciente")
@@ -348,12 +324,18 @@ if st.session_state.admin_mode:
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
-        sub_gestionar, sub_crear = st.tabs(["⚙️ Sesiones Creadas", "📝 Crear Nueva Sesión"])
+        sub_gestionar, sub_crear = st.tabs(["⚙️ Sesiones Actuales", "📝 Crear Nueva Sesión"])
         
         with sub_gestionar:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
-            planes_filtrados = list(reversed(plans))
+            # Filtramos para mostrar SOLO la última sesión activa de cada paciente
+            sesiones_actuales = {}
+            for pl in plans:
+                sesiones_actuales[pl["patientId"]] = pl
+                
+            planes_filtrados = list(reversed(sesiones_actuales.values()))
+            
             if search_query:
                 q = search_query.lower()
                 planes_filtrados = [pl for pl in planes_filtrados if q in pl["title"].lower() or q in get_patient_name(pl["patientId"]).lower()]
@@ -366,13 +348,6 @@ if st.session_state.admin_mode:
                         st.markdown(f"#### {pl['title']}")
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
-                        
-                        estado_actual = pl.get("active", True)
-                        nuevo_estado = st.toggle("Sesión Activa", value=estado_actual, key=f"tgl_{pl['id']}")
-                        if nuevo_estado != estado_actual:
-                            pl["active"] = nuevo_estado
-                            save_plans(plans)
-                            st.rerun()
 
                         c1, c2 = st.columns([3, 1])
                         with c1:
@@ -424,10 +399,10 @@ if st.session_state.admin_mode:
                         plans.append({
                             "id": str(uuid.uuid4())[:4], "patientId": paciente_sel, "title": titulo_sesion,
                             "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
-                            "pin": nuevo_pin, "active": True
+                            "pin": nuevo_pin
                         })
                         save_plans(plans)
-                        st.success("¡Sesión guardada y sincronizada en la nube!")
+                        st.success("¡Sesión guardada! Las sesiones antiguas de este paciente han pasado al historial.")
                         
                         nombre_paciente = get_patient_name(paciente_sel)
                         mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
@@ -468,8 +443,12 @@ else:
             sesion_encontrada = next((p for p in plans if str(p["pin"]) == str(pin_input).strip()), None)
             
             if sesion_encontrada:
-                if not sesion_encontrada.get("active", True):
-                    st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px;'>⚠️ Esta sesión ha sido desactivada por tu fisioterapeuta.</div>", unsafe_allow_html=True)
+                # Verificar si es la última sesión del paciente (la actual)
+                sesiones_del_pac = [pl for pl in plans if str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
+                sesion_actual = sesiones_del_pac[-1] if sesiones_del_pac else None
+                
+                if sesion_actual and str(sesion_actual["id"]) != str(sesion_encontrada["id"]):
+                    st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>⚠️ Esta sesión es antigua y ya no está disponible. Por favor, pídele a tu fisioterapeuta el PIN de tu nueva sesión.</div>", unsafe_allow_html=True)
                 else:
                     banner_html = f"""
                     <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin:22px 0;'>
