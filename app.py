@@ -127,7 +127,6 @@ def get_plans():
             else:
                 insts = {}
 
-            # NOTA: Ya no leemos ni guardamos el estado "active".
             plans.append({
                 "id": p_id, 
                 "patientId": pat_id, 
@@ -236,13 +235,10 @@ if st.session_state.admin_mode:
         for p in pacs_filtrados:
             with st.expander(f"👤 {p['name']}"):
                 st.markdown("#### 📋 Sesiones Asignadas")
-                # Filtramos todas las sesiones del paciente
                 sesiones_del_paciente = [pl for pl in plans if str(pl["patientId"]) == str(p["id"])]
                 
                 if sesiones_del_paciente:
-                    # La última sesión añadida es la actual
                     sesion_actual = sesiones_del_paciente[-1]
-                    # El resto son el historial
                     historial = sesiones_del_paciente[:-1]
                     
                     st.markdown("<div style='background:#eaf7f0; color:#13765d; padding:11px; border-radius:9px; margin-bottom:10px;'><b>🟢 Sesión Actual</b></div>", unsafe_allow_html=True)
@@ -250,7 +246,7 @@ if st.session_state.admin_mode:
                     
                     if historial:
                         st.markdown("<div style='background:#f6f8f6; color:#64756e; padding:11px; border-radius:9px; margin-top:10px; margin-bottom:10px;'><b>⚪ Historial (Antiguas)</b></div>", unsafe_allow_html=True)
-                        for pi in reversed(historial): # Mostramos las más recientes primero
+                        for pi in reversed(historial): 
                             nombres_ejercicios = []
                             for eid in pi['exerciseIds']:
                                 ej_data = get_exercise(eid)
@@ -303,11 +299,14 @@ if st.session_state.admin_mode:
                 if not ejs_cat:
                     st.write("No hay ejercicios en esta categoría.")
                 for e in ejs_cat:
-                    c1, c2, c3 = st.columns([2.5, 1, 1])
-                    c1.write(f"🔹 {e['name']}")
-                    c2.markdown(f"[🔗 Ver vídeo]({e['videoUrl']})")
+                    # NUEVO DISEÑO COMPACTO Y CON URL DIRECTA
+                    c1, c2, c3 = st.columns([2.5, 3.5, 1])
+                    with c1:
+                        st.markdown(f"<div style='padding-top:10px;'>🔹 <b>{e['name']}</b></div>", unsafe_allow_html=True)
+                    with c2:
+                        st.markdown(f"<div style='padding-top:10px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'><a href='{e['videoUrl']}' target='_blank'>{e['videoUrl']}</a></div>", unsafe_allow_html=True)
                     with c3:
-                        editar_modo = st.toggle("⚙️ Editar", key=f"tgl_{e['id']}")
+                        editar_modo = st.toggle("Editar", key=f"tgl_{e['id']}")
                     
                     if editar_modo:
                         with st.container(border=True):
@@ -320,7 +319,9 @@ if st.session_state.admin_mode:
                             if bc2.button("🗑️ Borrar", key=f"edl_{e['id']}"):
                                 exercises = [x for x in exercises if str(x["id"]) != str(e["id"])]
                                 save_exercises(exercises); st.rerun()
-                    st.divider()
+                                
+                    # Separador estrecho para ahorrar espacio vertical
+                    st.markdown("<hr style='margin: 5px 0px 5px 0px; border: 0; border-top: 1px solid #dce7e2;'>", unsafe_allow_html=True)
 
     # --- PESTAÑA SESIONES ---
     with tab_pau:
@@ -329,7 +330,6 @@ if st.session_state.admin_mode:
         with sub_gestionar:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
-            # Filtramos para mostrar SOLO la última sesión activa de cada paciente
             sesiones_actuales = {}
             for pl in plans:
                 sesiones_actuales[pl["patientId"]] = pl
@@ -443,7 +443,6 @@ else:
             sesion_encontrada = next((p for p in plans if str(p["pin"]) == str(pin_input).strip()), None)
             
             if sesion_encontrada:
-                # Verificar si es la última sesión del paciente (la actual)
                 sesiones_del_pac = [pl for pl in plans if str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
                 sesion_actual = sesiones_del_pac[-1] if sesiones_del_pac else None
                 
@@ -451,54 +450,63 @@ else:
                     st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>⚠️ Esta sesión es antigua y ya no está disponible. Por favor, pídele a tu fisioterapeuta el PIN de tu nueva sesión.</div>", unsafe_allow_html=True)
                 else:
                     banner_html = f"""
-                    <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin:22px 0;'>
-                        <h1 style='color:#103d33 !important; font-size:26px; margin:8px 0;'>¡Hola {get_patient_name(sesion_encontrada["patientId"])}!</h1>
-                        <p style='color:#13765d !important; margin:0; font-size:18px; font-weight:bold;'>Sesión: {sesion_encontrada['title']}</p>
+                    <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin: 25px 0px 35px 0px; text-align:center;'>
+                        <span style='color:#13765d; font-size:14px; font-weight:600; text-transform:uppercase; letter-spacing:1px;'>TU SESIÓN DE HOY</span>
+                        <h2 style='color:#103d33 !important; font-size:32px; font-weight:800; margin:10px 0px 5px 0px; line-height:1.2;'>{sesion_encontrada['title']}</h2>
                     </div>
                     """
                     st.markdown(banner_html, unsafe_allow_html=True)
+
+                    if not sesion_encontrada["exerciseIds"]:
+                        st.info("No hay ejercicios para esta sesión.")
                     
-                    for idx, e_id in enumerate(sesion_encontrada["exerciseIds"], 1):
-                        ej_data = get_exercise(e_id)
-                        if ej_data:
-                            st.markdown(f"<h2 style='font-size:20px; margin:20px 0 10px;'>{idx}. {ej_data['name'].upper()}</h2>", unsafe_allow_html=True)
-                            
-                            inst_data = sesion_encontrada.get("exerciseInstructions", {}).get(str(e_id), {})
-                            
-                            if isinstance(inst_data, dict):
-                                s = inst_data.get("series", "")
-                                r = inst_data.get("reps", "")
-                                n = inst_data.get("notes", "")
-                                
-                                detalles = []
-                                if s: detalles.append(f"<b>Series:</b> {s}")
-                                if r: detalles.append(f"<b>Reps:</b> {r}")
-                                if n: detalles.append(f"<b>Comentarios del fisio:</b> {n}")
-                                
-                                if detalles:
-                                    info_html = " | ".join(detalles)
-                                    st.markdown(f"<div style='color:#103d33; font-size:18px; margin-bottom:15px; background:#fff; border: 2px solid #e9f6f0; padding:15px; border-radius:10px;'>{info_html}</div>", unsafe_allow_html=True)
-                            elif isinstance(inst_data, str) and inst_data:
-                                st.markdown(f"<div style='color:#103d33; font-size:18px; margin-bottom:15px; background:#fff; border: 2px solid #e9f6f0; padding:15px; border-radius:10px;'>{inst_data}</div>", unsafe_allow_html=True)
-                            
-                            col_vid1, col_vid2 = st.columns([1.5, 1])
-                            with col_vid1:
-                                st.video(ej_data["videoUrl"])
-                                
-                            st.divider()
-                            
-                    st.markdown("<h2 style='font-size:19px; margin:24px 0 13px;'>📝 Reporte de entrenamiento</h2>", unsafe_allow_html=True)
-                    with st.form("feedback_form"):
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            eva = st.slider("Escala EVA (Dolor 0-10)", 0, 10, 2)
-                        with col_b:
-                            borg = st.slider("Escala Borg (Esfuerzo 0-10)", 0, 10, 5)
-                        comentario = st.text_area("Comentarios (molestias, sensaciones)")
+                    st.markdown("<h3 style='margin-bottom:20px; font-size:22px; color:#103d33 !important;'>🎥 Lista de Ejercicios</h3>", unsafe_allow_html=True)
+                    
+                    for ex_id in sesion_encontrada["exerciseIds"]:
+                        ex_data = get_exercise(ex_id)
+                        inst_data = sesion_encontrada["exerciseInstructions"].get(ex_id, {})
                         
-                        if st.form_submit_button("Enviar Resultados", type="primary"):
-                            fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                            save_checkin_item(sesion_encontrada["id"], fecha_hoy, eva, borg, comentario)
-                            st.success("¡Registro enviado correctamente a tu fisioterapeuta!")
+                        if ex_data:
+                            series = inst_data.get("series", "-")
+                            reps = inst_data.get("reps", "-")
+                            notes = inst_data.get("notes", "")
+
+                            card_html = f"""
+                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0px 4px 15px rgba(0,0,0,0.02);'>
+                                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #f0f4f2; padding-bottom:15px;'>
+                                    <div>
+                                        <h4 style='margin:0 0 5px 0; font-size:18px; color:#103d33 !important;'>{ex_data['name']}</h4>
+                                        <span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span>
+                                    </div>
+                                    <a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>
+                                </div>
+                                <div style='display:flex; gap:20px;'>
+                                    <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
+                                        <span style='color:#64756e; font-size:12px; text-transform:uppercase;'>Series</span><br>
+                                        <span style='font-size:18px; font-weight:bold; color:#103d33;'>{series}</span>
+                                    </div>
+                                    <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
+                                        <span style='color:#64756e; font-size:12px; text-transform:uppercase;'>Repeticiones</span><br>
+                                        <span style='font-size:18px; font-weight:bold; color:#103d33;'>{reps}</span>
+                                    </div>
+                                </div>
+                            """
+                            if notes:
+                                card_html += f"<div style='margin-top:15px; background:#fff8e1; border-left:4px solid #fbc02d; padding:10px; border-radius:0 8px 8px 0; color:#103d33; font-size:14px;'>💡 {notes}</div>"
+                            card_html += "</div>"
+                            
+                            st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    st.divider()
+                    st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Terminar Sesión</h3>", unsafe_allow_html=True)
+                    st.write("¿Cómo ha ido? Por favor, reporta la intensidad para tu fisioterapeuta.")
+                    with st.form(f"checkin_form_{sesion_encontrada['id']}"):
+                        eva = st.slider("Dolor (EVA): 0 (Nada) a 10 (Máximo)", 0, 10, 0)
+                        borg = st.slider("Fatiga (Borg): 0 (Reposo) a 10 (Extenuante)", 0, 10, 0)
+                        comentarios = st.text_area("¿Alguna molestia o comentario? (Opcional)")
+                        
+                        if st.form_submit_button("Enviar Reporte a mi Fisio", type="primary"):
+                            save_checkin_item(sesion_encontrada["id"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), eva, borg, comentarios)
+                            st.success("¡Enviado con éxito! Tu fisio ya puede verlo.")
             else:
-                st.markdown("<div style='background:#fdecec; color:#aa3838; padding:11px 13px; border-radius:9px; text-align:center;'>PIN incorrecto.</div>", unsafe_allow_html=True)
+                col2.error("PIN incorrecto.")
