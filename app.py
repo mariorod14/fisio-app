@@ -38,7 +38,6 @@ estilo_css = """
     button[data-testid="baseButton-primary"] { background-color: var(--green) !important; color: white !important; border-radius: 9px !important; }
     .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"], .stSelectbox div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
-    /* Hacer el formulario más limpio */
     [data-testid="stForm"] { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: white;}
 </style>
 """
@@ -55,6 +54,13 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN
 # =============================================================
 # FUNCIONES DE LECTURA Y ESCRITURA
 # =============================================================
+def clean_str(val):
+    if pd.isna(val): return ""
+    s = str(val).strip()
+    if s.endswith(".0"): s = s[:-2]
+    if s.lower() == "nan": return ""
+    return s
+
 def get_patients():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="pacientes", ttl=600)
@@ -62,9 +68,15 @@ def get_patients():
         df = df.dropna(how="all")
         records = []
         for _, r in df.iterrows():
-            p_id = str(r.get("id", ""))
-            if p_id.endswith(".0"): p_id = p_id[:-2]
-            records.append({"id": p_id, "name": str(r.get("name", "")), "notes": str(r.get("notes", ""))})
+            records.append({
+                "id": clean_str(r.get("id", "")), 
+                "name": clean_str(r.get("name", "")), 
+                "phone": clean_str(r.get("phone", "")),
+                "anamnesis": clean_str(r.get("anamnesis", "")),
+                "inspeccion": clean_str(r.get("inspeccion", "")),
+                "movilidad": clean_str(r.get("movilidad", "")),
+                "fuerza": clean_str(r.get("fuerza", ""))
+            })
         return records
     except Exception as e:
         return []
@@ -80,9 +92,12 @@ def get_exercises():
         df = df.dropna(how="all")
         records = []
         for _, r in df.iterrows():
-            e_id = str(r.get("id", ""))
-            if e_id.endswith(".0"): e_id = e_id[:-2]
-            records.append({"id": e_id, "name": str(r.get("name", "")), "videoUrl": str(r.get("videoUrl", "")), "category": str(r.get("category", ""))})
+            records.append({
+                "id": clean_str(r.get("id", "")), 
+                "name": clean_str(r.get("name", "")), 
+                "videoUrl": clean_str(r.get("videoUrl", "")), 
+                "category": clean_str(r.get("category", ""))
+            })
         return records
     except Exception as e:
         return []
@@ -97,44 +112,29 @@ def get_plans():
         if df.empty: return []
         plans = []
         for _, r in df.iterrows():
-            p_id = str(r.get("id", ""))
-            if p_id.endswith(".0"): p_id = p_id[:-2]
-            pat_id = str(r.get("patientId", ""))
-            if pat_id.endswith(".0"): pat_id = pat_id[:-2]
-            pin_val = str(r.get("pin", ""))
-            if pin_val.endswith(".0"): pin_val = pin_val[:-2]
-            
             ex_ids_raw = r.get("exerciseIds", "[]")
             if isinstance(ex_ids_raw, str) and ex_ids_raw.startswith("["):
                 try:
                     ex_ids = json.loads(ex_ids_raw)
-                    ex_ids = [str(x)[:-2] if str(x).endswith(".0") else str(x) for x in ex_ids]
-                except:
-                    ex_ids = []
-            else:
-                ex_ids = []
+                    ex_ids = [clean_str(x) for x in ex_ids]
+                except: ex_ids = []
+            else: ex_ids = []
 
             inst_raw = r.get("exerciseInstructions", "{}")
             if isinstance(inst_raw, str) and inst_raw.startswith("{"):
                 try:
                     insts = json.loads(inst_raw)
-                    cleaned_insts = {}
-                    for k, v in insts.items():
-                        clean_k = str(k)[:-2] if str(k).endswith(".0") else str(k)
-                        cleaned_insts[clean_k] = v
-                    insts = cleaned_insts
-                except:
-                    insts = {}
-            else:
-                insts = {}
+                    cleaned_insts = {clean_str(k): v for k, v in insts.items()}
+                except: cleaned_insts = {}
+            else: cleaned_insts = {}
 
             plans.append({
-                "id": p_id, 
-                "patientId": pat_id, 
-                "title": str(r.get("title", "")),
+                "id": clean_str(r.get("id", "")), 
+                "patientId": clean_str(r.get("patientId", "")), 
+                "title": clean_str(r.get("title", "")),
                 "exerciseIds": ex_ids, 
-                "exerciseInstructions": insts,
-                "pin": pin_val
+                "exerciseInstructions": cleaned_insts,
+                "pin": clean_str(r.get("pin", ""))
             })
         return plans
     except Exception as e:
@@ -144,12 +144,10 @@ def save_plans(plans_list):
     formatted = []
     for p in plans_list:
         formatted.append({
-            "id": str(p["id"]), 
-            "patientId": str(p["patientId"]), 
-            "title": str(p["title"]),
+            "id": p["id"], "patientId": p["patientId"], "title": p["title"],
             "exerciseIds": json.dumps(p["exerciseIds"]), 
             "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
-            "pin": str(p["pin"])
+            "pin": p["pin"]
         })
     conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted))
     st.cache_data.clear()
@@ -161,11 +159,14 @@ def get_checkins():
         df = df.dropna(how="all")
         records = []
         for _, r in df.iterrows():
-            c_id = str(r.get("id", ""))
-            if c_id.endswith(".0"): c_id = c_id[:-2]
-            p_id = str(r.get("planId", ""))
-            if p_id.endswith(".0"): p_id = p_id[:-2]
-            records.append({"id": c_id, "planId": p_id, "date": str(r.get("date", "")), "eva": str(r.get("eva", "")), "borg": str(r.get("borg", "")), "comment": str(r.get("comment", ""))})
+            records.append({
+                "id": clean_str(r.get("id", "")), 
+                "planId": clean_str(r.get("planId", "")), 
+                "date": clean_str(r.get("date", "")), 
+                "eva": clean_str(r.get("eva", "")), 
+                "borg": clean_str(r.get("borg", "")), 
+                "comment": clean_str(r.get("comment", ""))
+            })
         return records
     except Exception as e:
         return []
@@ -177,7 +178,7 @@ def save_checkin_item(plan_id, date, eva, borg, comment):
     st.cache_data.clear()
 
 # =============================================================
-# CARGA DE DATOS
+# CARGA DE DATOS Y AYUDANTES
 # =============================================================
 patients = get_patients()
 exercises = get_exercises()
@@ -212,11 +213,21 @@ if st.session_state.admin_mode:
     with tab_pac:
         with st.expander("➕ Añadir Nuevo Paciente", expanded=False):
             with st.form("nuevo_paciente_form", clear_on_submit=True):
-                new_p_name = st.text_input("Nombre completo:")
-                new_p_notes = st.text_area("Notas clínicas:")
+                c_np1, c_np2 = st.columns([3, 1])
+                new_p_name = c_np1.text_input("Nombre completo:")
+                new_p_phone = c_np2.text_input("Teléfono:")
+                
+                new_p_ana = st.text_area("Anamnesis (preguntas, historia...):")
+                new_p_ins = st.text_area("Inspección física (coloración, palpación, inspección visual...):")
+                new_p_mov = st.text_area("Movilidad activa y pasiva:")
+                new_p_fue = st.text_area("Fuerza:")
+                
                 if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                     if new_p_name:
-                        patients.append({"id": str(uuid.uuid4())[:4], "name": new_p_name, "notes": new_p_notes})
+                        patients.append({
+                            "id": str(uuid.uuid4())[:4], "name": new_p_name, "phone": new_p_phone,
+                            "anamnesis": new_p_ana, "inspeccion": new_p_ins, "movilidad": new_p_mov, "fuerza": new_p_fue
+                        })
                         save_patients(patients)
                         st.success("¡Paciente añadido y sincronizado!")
                         st.rerun()
@@ -234,7 +245,8 @@ if st.session_state.admin_mode:
             st.info("No se han encontrado pacientes.")
             
         for p in pacs_filtrados:
-            with st.expander(f"👤 {p['name']}"):
+            titulo_exp = f"👤 {p['name']} - 📞 {p.get('phone', 'Sin teléfono')}" if p.get('phone') else f"👤 {p['name']}"
+            with st.expander(titulo_exp):
                 st.markdown("#### 📋 Sesiones Asignadas")
                 sesiones_del_paciente = [pl for pl in plans if str(pl["patientId"]) == str(p["id"])]
                 
@@ -259,43 +271,67 @@ if st.session_state.admin_mode:
                     st.write("No tiene ninguna sesión todavía.")
 
                 st.divider()
-                st.markdown("#### ⚙️ Ajustes del Paciente")
-                edit_name = st.text_input("Nombre del paciente", value=p["name"], key=f"name_{p['id']}")
-                edit_notes = st.text_area("Notas clínicas", value=p["notes"], key=f"notes_{p['id']}")
+                st.markdown("#### ⚙️ Datos Clínicos del Paciente")
+                
+                ce1, ce2 = st.columns([3, 1])
+                edit_name = ce1.text_input("Nombre del paciente", value=p["name"], key=f"name_{p['id']}")
+                edit_phone = ce2.text_input("Teléfono", value=p.get("phone", ""), key=f"phone_{p['id']}")
+                
+                edit_ana = st.text_area("Anamnesis", value=p.get("anamnesis", ""), key=f"ana_{p['id']}")
+                edit_ins = st.text_area("Inspección física", value=p.get("inspeccion", ""), key=f"ins_{p['id']}")
+                edit_mov = st.text_area("Movilidad activa y pasiva", value=p.get("movilidad", ""), key=f"mov_{p['id']}")
+                edit_fue = st.text_area("Fuerza", value=p.get("fuerza", ""), key=f"fue_{p['id']}")
                 
                 c1, c2 = st.columns(2)
-                if c1.button("💾 Actualizar", key=f"upd_{p['id']}", type="primary"):
-                    p["name"] = edit_name; p["notes"] = edit_notes; save_patients(patients); st.rerun()
-                if c2.button("🗑️ Borrar", key=f"del_{p['id']}"):
+                if c1.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
+                    p["name"] = edit_name; p["phone"] = edit_phone
+                    p["anamnesis"] = edit_ana; p["inspeccion"] = edit_ins
+                    p["movilidad"] = edit_mov; p["fuerza"] = edit_fue
+                    save_patients(patients); st.rerun()
+                if c2.button("🗑️ Borrar Paciente", key=f"del_{p['id']}"):
                     patients = [x for x in patients if str(x["id"]) != str(p["id"])]
                     save_patients(patients); st.rerun()
 
-    # --- PESTAÑA EJERCICIOS (LÍNEAS ESTRECHAS Y AGRUPADAS) ---
+    # --- PESTAÑA EJERCICIOS ---
     with tab_ej:
-        st.markdown("<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios</h3>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size:14px; color:var(--muted); margin-top:-10px;'>💡 Edita directamente en los recuadros de cada línea. Para borrar, marca la casilla de la derecha. Pulsa <b>Guardar Todos los Cambios</b> al final.</p>", unsafe_allow_html=True)
+        total_ej = len(exercises)
+        st.markdown(f"<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios (Total: {total_ej})</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:14px; color:var(--muted); margin-top:-10px;'>💡 Añade un nuevo ejercicio arriba, o edita directamente en los recuadros de cada línea. Pulsa <b>Guardar Todos los Cambios</b> abajo del todo al terminar.</p>", unsafe_allow_html=True)
 
         with st.form("form_editar_ejercicios"):
+            # 1. SECCIÓN PARA AÑADIR (ARRIBA DEL TODO)
+            st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
+            cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1])
+            with cn1:
+                new_n = st.text_input("new_n", placeholder="Nombre del ejercicio...", label_visibility="collapsed")
+            with cn2:
+                new_u = st.text_input("new_u", placeholder="Enlace de YouTube...", label_visibility="collapsed")
+            with cn3:
+                new_c = st.selectbox("new_c", CATEGORIAS_EJ, label_visibility="collapsed")
+            
+            st.markdown("<hr style='margin: 20px 0;'>", unsafe_allow_html=True)
+            
+            # 2. LISTA DE EJERCICIOS EXISTENTES
             nuevos_datos = {}
             ids_borrar = []
             
-            # Cabeceras sutiles (una sola vez)
             c_h1, c_h2, c_h3, c_h4 = st.columns([4, 4, 3, 1])
             c_h1.caption("NOMBRE")
             c_h2.caption("ENLACE YOUTUBE")
             c_h3.caption("CATEGORÍA")
             c_h4.caption("BORRAR")
             
-            # Mostrar ejercicios agrupados por categoría
             for cat in CATEGORIAS_EJ:
+                # Filtrar y ordenar alfabéticamente
                 ej_cat = [e for e in exercises if e.get("category") == cat]
+                ej_cat = sorted(ej_cat, key=lambda x: x["name"].lower())
+                
                 if ej_cat:
-                    st.markdown(f"<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat} (Total: {len(ej_cat)})</div>", unsafe_allow_html=True)
                     for e in ej_cat:
                         eid = e["id"]
                         c1, c2, c3, c4 = st.columns([4, 4, 3, 1])
                         with c1:
-                            # label_visibility="collapsed" los hace súper estrechos
                             n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
                         with c2:
                             u = st.text_input("u", value=e["videoUrl"], key=f"u_{eid}", label_visibility="collapsed")
@@ -308,26 +344,14 @@ if st.session_state.admin_mode:
                         nuevos_datos[eid] = {"id": eid, "name": n, "videoUrl": u, "category": c}
                         if b: ids_borrar.append(eid)
                         
-            # Sección para añadir uno nuevo en la misma vista
-            st.markdown("<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 25px 0 5px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
-            cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1])
-            with cn1:
-                new_n = st.text_input("new_n", placeholder="Nombre del ejercicio...", label_visibility="collapsed")
-            with cn2:
-                new_u = st.text_input("new_u", placeholder="Enlace de YouTube...", label_visibility="collapsed")
-            with cn3:
-                new_c = st.selectbox("new_c", CATEGORIAS_EJ, label_visibility="collapsed")
-                
             st.markdown("<br>", unsafe_allow_html=True)
             if st.form_submit_button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
                 lista_final = []
-                # Mantener los que no se han borrado (con sus ediciones)
                 for e in exercises:
                     eid = e["id"]
                     if eid not in ids_borrar:
                         lista_final.append(nuevos_datos[eid])
                 
-                # Añadir el nuevo si han puesto nombre
                 if new_n.strip():
                     lista_final.append({
                         "id": str(uuid.uuid4())[:4],
@@ -348,9 +372,7 @@ if st.session_state.admin_mode:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
             sesiones_actuales = {}
-            for pl in plans:
-                sesiones_actuales[pl["patientId"]] = pl
-                
+            for pl in plans: sesiones_actuales[pl["patientId"]] = pl
             planes_filtrados = list(reversed(sesiones_actuales.values()))
             
             if search_query:
@@ -384,63 +406,81 @@ if st.session_state.admin_mode:
                 paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name)
                 titulo_sesion = st.text_input("2. Título de la Sesión:")
                 
-                # --- ORDENACIÓN POR CATEGORÍAS EN EL DESPLEGABLE ---
-                st.markdown("**3. Selecciona y ordena los ejercicios:**")
-                st.markdown("<p style='font-size: 13px; color: var(--muted); margin-top:-10px;'>Busca los ejercicios (ahora agrupados por categoría). <b>Aparecerán en el orden en que los cliques</b>. Puedes arrastrar las etiquetas grises horizontalmente para reordenarlos.</p>", unsafe_allow_html=True)
+                st.markdown("**3. Selecciona los ejercicios:**")
                 
-                # Diccionario donde agrupamos en orden: primero CORE, luego EEII, etc.
                 ej_options = {}
                 for cat in CATEGORIAS_EJ:
-                    for e in [x for x in exercises if x.get("category") == cat]:
+                    ej_ordenados = sorted([x for x in exercises if x.get("category") == cat], key=lambda x: x["name"].lower())
+                    for e in ej_ordenados:
                         ej_options[f"{cat}  |  {e['name']}"] = e['id']
-                        
-                # Por si hay algún ejercicio con categoría antigua o mal escrita
-                for e in exercises:
-                    if e.get("category") not in CATEGORIAS_EJ:
-                        ej_options[f"Otros  |  {e['name']}"] = e['id']
                 
-                selected_names = st.multiselect(
-                    "Buscador de ejercicios",
-                    options=list(ej_options.keys()),
-                    label_visibility="collapsed",
-                    placeholder="Escribe aquí o despliega para verlos ordenados..."
-                )
+                selected_names = st.multiselect("Buscador de ejercicios", options=list(ej_options.keys()), label_visibility="collapsed", placeholder="Escribe o despliega para buscar...")
                 
-                # Recuperamos los IDs basándonos en los nombres seleccionados (Mantiene el orden del clic/arrastre)
-                ejercicios_sel = [ej_options[name] for name in selected_names]
+                # Estado para mantener el orden de los ejercicios
+                if 'orden_ejs' not in st.session_state:
+                    st.session_state.orden_ejs = []
+                
+                ejs_seleccionados = [ej_options[name] for name in selected_names]
+                
+                # Sincronizar estado de orden con los seleccionados
+                st.session_state.orden_ejs = [e for e in st.session_state.orden_ejs if e in ejs_seleccionados]
+                for e in ejs_seleccionados:
+                    if e not in st.session_state.orden_ejs:
+                        st.session_state.orden_ejs.append(e)
                 
                 instrucciones_dict = {}
-                if ejercicios_sel:
-                    st.markdown("**4. Configuración (El orden mostrado aquí abajo es el que verá el paciente):**")
-                    for idx, e_id in enumerate(ejercicios_sel):
+                if st.session_state.orden_ejs:
+                    st.markdown("**4. Configuración y Orden:**")
+                    st.caption("Usa las flechas (⬆️/⬇️) para cambiar el orden en el que le saldrán al paciente.")
+                    
+                    c_th, c_sh, c_rh, c_nh, c_x1, c_x2 = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
+                    c_th.caption("EJERCICIO")
+                    c_sh.caption("SERIES")
+                    c_rh.caption("REPS")
+                    c_nh.caption("NOTAS EXTRA")
+                    
+                    for idx, e_id in enumerate(st.session_state.orden_ejs):
                         ej_name = get_exercise(e_id)['name']
-                        st.markdown(f"**{idx + 1}. {ej_name}**") 
-                        col_s, col_r, col_n = st.columns([1, 1, 2])
+                        col_t, col_s, col_r, col_n, col_up, col_dn = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
+                        
+                        with col_t:
+                            st.markdown(f"<div style='margin-top:8px; font-weight:bold; font-size:14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx + 1}. {ej_name}</div>", unsafe_allow_html=True)
                         with col_s:
-                            s = st.text_input("Series", key=f"ser_{e_id}", placeholder="Ej: 3")
+                            s = st.text_input("S", key=f"ser_{e_id}", placeholder="Series", label_visibility="collapsed")
                         with col_r:
-                            r = st.text_input("Reps", key=f"rep_{e_id}", placeholder="Ej: 10")
+                            r = st.text_input("R", key=f"rep_{e_id}", placeholder="Reps", label_visibility="collapsed")
                         with col_n:
-                            n = st.text_input("Notas extra", key=f"not_{e_id}", placeholder="Ej: banda elástica")
+                            n = st.text_input("N", key=f"not_{e_id}", placeholder="Notas...", label_visibility="collapsed")
+                        with col_up:
+                            if st.button("⬆️", key=f"up_{e_id}"):
+                                if idx > 0:
+                                    st.session_state.orden_ejs[idx-1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx], st.session_state.orden_ejs[idx-1]
+                                    st.rerun()
+                        with col_dn:
+                            if st.button("⬇️", key=f"dn_{e_id}"):
+                                if idx < len(st.session_state.orden_ejs) - 1:
+                                    st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx], st.session_state.orden_ejs[idx+1]
+                                    st.rerun()
                         
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
                         
                 if st.button("💾 Generar Sesión", type="primary"):
-                    if titulo_sesion and ejercicios_sel:
+                    if titulo_sesion and st.session_state.orden_ejs:
                         nuevo_pin = str(random.randint(100000, 999999))
                         plans.append({
                             "id": str(uuid.uuid4())[:4], "patientId": paciente_sel, "title": titulo_sesion,
-                            "exerciseIds": ejercicios_sel, "exerciseInstructions": instrucciones_dict,
+                            "exerciseIds": st.session_state.orden_ejs, "exerciseInstructions": instrucciones_dict,
                             "pin": nuevo_pin
                         })
                         save_plans(plans)
+                        st.session_state.orden_ejs = [] # Limpiar orden tras guardar
                         st.success("¡Sesión guardada! Las sesiones antiguas de este paciente han pasado al historial.")
                         
                         nombre_paciente = get_patient_name(paciente_sel)
                         mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
-                    elif not ejercicios_sel:
+                    elif not st.session_state.orden_ejs:
                         st.warning("Debes seleccionar al menos un ejercicio.")
 
     # --- PESTAÑA CHECK-INS ---
