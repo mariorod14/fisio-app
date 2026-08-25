@@ -10,13 +10,20 @@ import json
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="expanded")
 
 # =============================================================
-# CONEXIÓN OPTIMIZADA
+# CONEXIÓN Y SEGURIDAD ANTI-BORRADO
 # =============================================================
 @st.cache_resource
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
 conn = get_conn()
+
+# Bandera de seguridad: se reinicia cada vez que carga la app.
+# Si falla la lectura, cambia a True y bloquea los guardados.
+if 'gsheets_read_error' not in st.session_state:
+    st.session_state.gsheets_read_error = False
+
+st.session_state.gsheets_read_error = False 
 
 # VARIABLES GLOBALES
 PASSWORD_FISIO = "FISIO123"
@@ -39,26 +46,22 @@ estilo_css = """
     .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"], .stSelectbox div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
     [data-testid="stForm"] { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: white;}
-    /* Ajustes para el menú lateral */
     section[data-testid="stSidebar"] { background-color: white; border-right: 1px solid var(--line); }
     .stRadio p { font-size: 16px !important; font-weight: 500 !important; }
 </style>
 """
 st.markdown(estilo_css, unsafe_allow_html=True)
 
-# Estado de sesión
+# Estado de sesión de usuario
 if 'admin_mode' not in st.session_state:
     st.session_state.admin_mode = False
 if 'logged_pin' not in st.session_state:
     st.session_state.logged_pin = None
 
-# =============================================================
-# URL DIRECTA DE LA HOJA DE CÁLCULO
-# =============================================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
 # =============================================================
-# FUNCIONES DE LECTURA Y ESCRITURA
+# FUNCIONES DE LECTURA Y ESCRITURA (CON ESCUDO DE SEGURIDAD)
 # =============================================================
 def clean_str(val):
     if pd.isna(val): return ""
@@ -85,9 +88,13 @@ def get_patients():
             })
         return records
     except Exception:
+        st.session_state.gsheets_read_error = True
         return []
 
 def save_patients(patients_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
+        return
     conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list))
     st.cache_data.clear()
 
@@ -106,9 +113,13 @@ def get_exercises():
             })
         return records
     except Exception:
+        st.session_state.gsheets_read_error = True
         return []
 
 def save_exercises(exercises_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
+        return
     conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list))
     st.cache_data.clear()
 
@@ -120,17 +131,13 @@ def get_plans():
         for _, r in df.iterrows():
             ex_ids_raw = r.get("exerciseIds", "[]")
             if isinstance(ex_ids_raw, str) and ex_ids_raw.startswith("["):
-                try:
-                    ex_ids = json.loads(ex_ids_raw)
-                    ex_ids = [clean_str(x) for x in ex_ids]
+                try: ex_ids = [clean_str(x) for x in json.loads(ex_ids_raw)]
                 except: ex_ids = []
             else: ex_ids = []
 
             inst_raw = r.get("exerciseInstructions", "{}")
             if isinstance(inst_raw, str) and inst_raw.startswith("{"):
-                try:
-                    insts = json.loads(inst_raw)
-                    cleaned_insts = {clean_str(k): v for k, v in insts.items()}
+                try: cleaned_insts = {clean_str(k): v for k, v in json.loads(inst_raw).items()}
                 except: cleaned_insts = {}
             else: cleaned_insts = {}
 
@@ -144,9 +151,13 @@ def get_plans():
             })
         return plans
     except Exception:
+        st.session_state.gsheets_read_error = True
         return []
 
 def save_plans(plans_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
+        return
     formatted = []
     for p in plans_list:
         formatted.append({
@@ -183,9 +194,13 @@ def get_programs_af():
             })
         return programs
     except Exception:
+        st.session_state.gsheets_read_error = True
         return []
 
 def save_programs_af(programs_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
+        return
     formatted = []
     for p in programs_list:
         formatted.append({
@@ -214,12 +229,16 @@ def get_checkins():
             })
         return records
     except Exception:
+        st.session_state.gsheets_read_error = True
         return []
 
 def save_checkin_item(plan_id, date, eva, borg, comment):
-    checkins = get_checkins()
-    checkins.append({"id": str(uuid.uuid4())[:4], "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
-    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins))
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Error de conexión temporal. Inténtalo de nuevo en unos segundos.")
+        return
+    checkins_data = get_checkins()
+    checkins_data.append({"id": str(uuid.uuid4())[:4], "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
+    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins_data))
     st.cache_data.clear()
 
 # =============================================================
@@ -248,7 +267,6 @@ if st.session_state.admin_mode:
     
     st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
     
-    # NAVEGACIÓN LATERAL
     menu_seleccion = st.sidebar.radio(
         "Panel de Control:",
         ["📁 Archivo", "🩺 Sesiones", "🏋️ Programas de AF"]
@@ -261,13 +279,40 @@ if st.session_state.admin_mode:
         st.rerun()
 
     # -------------------------------------------------------------
-    # VISTA 1: ARCHIVO (PACIENTES Y EJERCICIOS)
+    # BOTÓN DE COPIA DE SEGURIDAD LOCAL
+    # -------------------------------------------------------------
+    st.sidebar.divider()
+    
+    backup_data = {
+        "pacientes": patients,
+        "ejercicios": exercises,
+        "sesiones": plans,
+        "programas_af": programs_af,
+        "checkins": checkins
+    }
+    
+    backup_json = json.dumps(backup_data, ensure_ascii=False, indent=2)
+    
+    st.sidebar.download_button(
+        label="📥 Descargar Copia de Seguridad",
+        data=backup_json,
+        file_name=f"backup_fisiosesion_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json",
+        mime="application/json",
+        use_container_width=True
+    )
+    st.sidebar.caption("Pulsa aquí regularmente para guardar una copia de todos tus pacientes y ejercicios en tu ordenador.")
+
+    # AVISO DE ERROR DE CONEXIÓN
+    if st.session_state.gsheets_read_error:
+        st.error("⚠️ Atención: Ha habido un fallo de conexión con Google Sheets. Las funciones de guardado y borrado están bloqueadas temporalmente para proteger tus datos. Recarga la página en unos segundos.")
+
+    # -------------------------------------------------------------
+    # VISTA 1: ARCHIVO
     # -------------------------------------------------------------
     if menu_seleccion == "📁 Archivo":
         st.markdown("<h1>📁 Base de Datos y Archivo</h1>", unsafe_allow_html=True)
         tab_pac, tab_ej = st.tabs(["👥 Pacientes", "🎥 Ejercicios"])
         
-        # --- PESTAÑA PACIENTES ---
         with tab_pac:
             with st.expander("➕ Añadir Nuevo Paciente", expanded=False):
                 with st.form("nuevo_paciente_form", clear_on_submit=True):
@@ -276,7 +321,7 @@ if st.session_state.admin_mode:
                     new_p_phone = c_np2.text_input("Teléfono:")
                     
                     new_p_ana = st.text_area("Anamnesis (preguntas, historia...):")
-                    new_p_ins = st.text_area("Inspección física (coloración, palpación, inspección visual...):")
+                    new_p_ins = st.text_area("Inspección física (coloración, palpación...):")
                     new_p_mov = st.text_area("Movilidad activa y pasiva:")
                     new_p_fue = st.text_area("Fuerza:")
                     
@@ -344,12 +389,10 @@ if st.session_state.admin_mode:
                         patients = [x for x in patients if str(x["id"]) != str(p["id"])]
                         save_patients(patients); st.rerun()
 
-        # --- PESTAÑA EJERCICIOS ---
         with tab_ej:
             total_ej = len(exercises)
             st.markdown(f"<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios (Total: {total_ej})</h3>", unsafe_allow_html=True)
-            st.markdown("<p style='font-size:14px; color:var(--muted); margin-top:-10px;'>💡 Añade un nuevo ejercicio arriba, o edita directamente en los recuadros de cada línea. Pulsa <b>Guardar Todos los Cambios</b> abajo del todo al terminar.</p>", unsafe_allow_html=True)
-
+            
             with st.form("form_editar_ejercicios"):
                 st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
                 cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1])
@@ -414,13 +457,12 @@ if st.session_state.admin_mode:
                     st.rerun()
 
     # -------------------------------------------------------------
-    # VISTA 2: SESIONES CLÍNICAS (MÁS CHECK-INS)
+    # VISTA 2: SESIONES CLÍNICAS
     # -------------------------------------------------------------
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
         tab_ses_act, tab_checkins, tab_crear_ses = st.tabs(["⚙️ Sesiones Actuales", "📊 Check-ins", "📝 Crear Nueva Sesión"])
         
-        # --- PESTAÑA: SESIONES ACTUALES ---
         with tab_ses_act:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
@@ -452,7 +494,6 @@ if st.session_state.admin_mode:
                                 plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
                                 save_plans(plans); st.rerun()
 
-        # --- PESTAÑA: CHECK-INS ---
         with tab_checkins:
             st.markdown("<h3 style='margin-top:10px;'>Reportes de Carga de Pacientes</h3>", unsafe_allow_html=True)
             if not checkins:
@@ -468,7 +509,6 @@ if st.session_state.admin_mode:
                                 st.markdown(f"*{ch['comment']}*")
                                 st.divider()
 
-        # --- PESTAÑA: CREAR SESIÓN ---
         with tab_crear_ses:
             if not patients:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
@@ -498,7 +538,6 @@ if st.session_state.admin_mode:
                 instrucciones_dict = {}
                 if st.session_state.orden_ejs:
                     st.markdown("**4. Configuración y Orden:**")
-                    st.caption("Usa las flechas (⬆️/⬇️) para cambiar el orden en el que le saldrán al paciente.")
                     
                     c_th, c_sh, c_rh, c_nh, c_x1, c_x2 = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
                     c_th.caption("EJERCICIO")
@@ -558,9 +597,7 @@ if st.session_state.admin_mode:
         st.markdown("<h1>🏋️ Programas de Actividad Física</h1>", unsafe_allow_html=True)
         tab_gest_af, tab_crear_af = st.tabs(["⚙️ Programas Activos", "📝 Crear Nuevo Programa AF"])
         
-        # --- PESTAÑA: PROGRAMAS ACTIVOS ---
         with tab_gest_af:
-            st.markdown("<h3 style='margin-top:10px;'>Programas de Fuerza y AF Activos</h3>", unsafe_allow_html=True)
             if not programs_af:
                 st.info("No hay programas de AF creados todavía.")
             else:
@@ -582,7 +619,6 @@ if st.session_state.admin_mode:
                                 save_programs_af(programs_af)
                                 st.rerun()
 
-        # --- PESTAÑA: CREAR NUEVO PROGRAMA AF ---
         with tab_crear_af:
             if not patients:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
@@ -644,7 +680,6 @@ if st.session_state.admin_mode:
                             
                             b_nombre_completo = f"{b_cat} {b_regla}".strip()
                             
-                            # Filtrar ejercicios EXCLUSIVAMENTE de la categoría elegida
                             ej_cat_filtrados = sorted([e for e in exercises if e.get("category") == b_cat], key=lambda x: x["name"].lower())
                             ej_options_block = {e["name"]: e["id"] for e in ej_cat_filtrados}
                             
@@ -652,10 +687,9 @@ if st.session_state.admin_mode:
                                 f"Ejercicios de {b_cat}:", 
                                 options=list(ej_options_block.keys()), 
                                 key=f"bejs_{d_idx}_{b_idx}",
-                                placeholder=f"Selecciona ejercicios de {b_cat}..."
+                                placeholder=f"Selecciona ejercicios..."
                             )
                             
-                            # Gestión de orden dinámico con botones ⬆️ / ⬇️
                             key_order_af = f"orden_af_{d_idx}_{b_idx}"
                             if key_order_af not in st.session_state:
                                 st.session_state[key_order_af] = []
@@ -727,7 +761,6 @@ if st.session_state.admin_mode:
 # MÓDULO 2: PORTAL DEL PACIENTE / FORMULARIO LOGIN
 # =============================================================
 else:
-    # SI NO SE HA INICIADO SESIÓN -> PANTALLA DE ACCESO
     if not st.session_state.logged_pin:
         st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión o Programa</h1><p style='color:#64756e;'>Introduce tu código PIN de acceso</p></div>", unsafe_allow_html=True)
         
@@ -746,23 +779,18 @@ else:
                         st.session_state.logged_pin = val_pin
                         st.rerun()
 
-    # SI YA SE HA INICIADO SESIÓN -> SE OCULTA EL FORMULARIO Y SE MUESTRA EL CONTENIDO DIRECTAMENTE
     else:
         pin_ingresado = st.session_state.logged_pin
         
-        # Buscar en Sesiones Clínicas Tradicionales
         sesion_encontrada = next((p for p in plans if str(p["pin"]) == str(pin_ingresado)), None)
-        # Buscar en Programas de AF
         programa_af_encontrado = next((pr for pr in programs_af if str(pr["pin"]) == str(pin_ingresado)), None)
         
-        # Botón sutil para salir si se equivocó de PIN
         col_exit1, col_exit2 = st.columns([4, 1])
         with col_exit2:
             if st.button("🚪 Cambiar PIN", key="exit_pin_btn"):
                 st.session_state.logged_pin = None
                 st.rerun()
 
-        # --- VISTA PROGRAMA DE AF ---
         if programa_af_encontrado:
             pr = programa_af_encontrado
             banner_af = f"""
@@ -788,12 +816,10 @@ else:
                         if ex_data:
                             prio_badge = "<span style='background:#fff3cd; color:#856404; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold; margin-left:8px;'>⭐ Prioritario</span>" if item.get('isPriority') else ""
                             
-                            # Todo el HTML comprimido para que el Markdown de Streamlit no se rompa con espacios vacíos
                             card_af_html = f"<div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'><div><span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>{prio_badge}</div><a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a></div>"
                             
                             st.markdown(card_af_html, unsafe_allow_html=True)
 
-        # --- VISTA SESIÓN CLÍNICA TRADICIONAL ---
         elif sesion_encontrada:
             sesiones_del_pac = [pl for pl in plans if str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
             sesion_actual = sesiones_del_pac[-1] if sesiones_del_pac else None
