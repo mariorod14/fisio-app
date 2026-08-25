@@ -766,15 +766,9 @@ else:
                         if ex_data:
                             prio_badge = "<span style='background:#fff3cd; color:#856404; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold; margin-left:8px;'>⭐ Prioritario</span>" if item.get('isPriority') else ""
                             
-                            card_af_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'>
-                                <div>
-                                    <span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>
-                                    {prio_badge}
-                                </div>
-                                <a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a>
-                            </div>
-                            """
+                            # Todo el HTML comprimido para que el Markdown de Streamlit no se rompa con espacios vacíos
+                            card_af_html = f"<div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'><div><span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>{prio_badge}</div><a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a></div>"
+                            
                             st.markdown(card_af_html, unsafe_allow_html=True)
 
         # --- VISTA SESIÓN CLÍNICA TRADICIONAL ---
