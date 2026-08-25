@@ -393,26 +393,50 @@ if st.session_state.admin_mode:
             total_ej = len(exercises)
             st.markdown(f"<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios (Total: {total_ej})</h3>", unsafe_allow_html=True)
             
-            with st.form("form_editar_ejercicios"):
+            # 1. FORMULARIO EXCLUSIVO PARA AÑADIR EJERCICIO RÁPIDO
+            with st.form("form_añadir_ejercicio", clear_on_submit=True):
                 st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
-                cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1])
+                
+                cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1.5])
                 with cn1:
                     new_n = st.text_input("new_n", placeholder="Nombre del ejercicio...", label_visibility="collapsed")
                 with cn2:
                     new_u = st.text_input("new_u", placeholder="Enlace de YouTube...", label_visibility="collapsed")
                 with cn3:
                     new_c = st.selectbox("new_c", CATEGORIAS_EJ, label_visibility="collapsed")
+                with cn4:
+                    btn_add = st.form_submit_button("➕ Añadir", type="primary", use_container_width=True)
                 
-                st.markdown("<hr style='margin: 20px 0;'>", unsafe_allow_html=True)
+                if btn_add:
+                    if new_n.strip():
+                        exercises.append({
+                            "id": str(uuid.uuid4())[:4],
+                            "name": new_n.strip(),
+                            "videoUrl": new_u.strip(),
+                            "category": new_c
+                        })
+                        save_exercises(exercises)
+                        st.success("¡Ejercicio añadido a la base de datos!")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ El nombre del ejercicio es obligatorio.")
+            
+            st.write("")
+            
+            # 2. FORMULARIO PARA EDITAR Y BORRAR LOS EXISTENTES
+            with st.form("form_editar_ejercicios"):
+                btn_save = st.form_submit_button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True)
+                
+                st.markdown("<hr style='margin: 10px 0 20px 0;'>", unsafe_allow_html=True)
                 
                 nuevos_datos = {}
                 ids_borrar = []
                 
-                c_h1, c_h2, c_h3, c_h4 = st.columns([4, 4, 3, 1])
+                c_h1, c_h2, c_h3, c_h4 = st.columns([4, 4, 3, 1.5])
                 c_h1.caption("NOMBRE")
                 c_h2.caption("ENLACE YOUTUBE")
                 c_h3.caption("CATEGORÍA")
-                c_h4.caption("BORRAR")
+                c_h4.caption("ACCIÓN")
                 
                 for cat in CATEGORIAS_EJ:
                     ej_cat = [e for e in exercises if e.get("category") == cat]
@@ -422,7 +446,7 @@ if st.session_state.admin_mode:
                         st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat} (Total: {len(ej_cat)})</div>", unsafe_allow_html=True)
                         for e in ej_cat:
                             eid = e["id"]
-                            c1, c2, c3, c4 = st.columns([4, 4, 3, 1])
+                            c1, c2, c3, c4 = st.columns([4, 4, 3, 1.5])
                             with c1:
                                 n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
                             with c2:
@@ -431,26 +455,19 @@ if st.session_state.admin_mode:
                                 idx = CATEGORIAS_EJ.index(e["category"]) if e["category"] in CATEGORIAS_EJ else 0
                                 c = st.selectbox("c", CATEGORIAS_EJ, index=idx, key=f"c_{eid}", label_visibility="collapsed")
                             with c4:
-                                b = st.checkbox("🗑️", key=f"del_{eid}")
+                                b = st.checkbox("🗑️ Borrar", key=f"del_{eid}")
                                 
                             nuevos_datos[eid] = {"id": eid, "name": n, "videoUrl": u, "category": c}
                             if b: ids_borrar.append(eid)
                             
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.form_submit_button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
+                
+                if btn_save:
                     lista_final = []
                     for e in exercises:
                         eid = e["id"]
                         if eid not in ids_borrar:
                             lista_final.append(nuevos_datos[eid])
-                    
-                    if new_n.strip():
-                        lista_final.append({
-                            "id": str(uuid.uuid4())[:4],
-                            "name": new_n.strip(),
-                            "videoUrl": new_u.strip(),
-                            "category": new_c
-                        })
                         
                     save_exercises(lista_final)
                     st.success("¡Base de datos de ejercicios actualizada!")
@@ -720,7 +737,7 @@ if st.session_state.admin_mode:
                                     with col_e_dn:
                                         if st.button("⬇️", key=f"dn_{d_idx}_{b_idx}_{eid}"):
                                             if idx_e < len(st.session_state[key_order_af]) - 1:
-                                                st.session_state[key_order_af][idx_e+1], st.session_state[key_order_af][idx_e] = st.session_state[key_order_af][idx_e], st.session_state[key_order_af][idx_e+1]
+                                                st.session_state[key_order_af][idx_e+1], st.session_state[key_order_af][idx_e] = st.session_state[key_order_af][idx_e+1], st.session_state[key_order_af][idx_e]
                                                 st.rerun()
 
                                     ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio})
