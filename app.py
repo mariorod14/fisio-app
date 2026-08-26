@@ -640,6 +640,13 @@ if st.session_state.admin_mode:
             if not patients:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
             else:
+                # Diccionario anti-borrado para guardar el estado de las estrellas de prioridad
+                if "prio_dict" not in st.session_state:
+                    st.session_state.prio_dict = {}
+                    
+                def _save_prio(k):
+                    st.session_state.prio_dict[k] = st.session_state[k]
+
                 st.markdown("### 📝 Diseñador de Programa Semanal de AF")
                 
                 col_p, col_t = st.columns([1, 2])
@@ -728,7 +735,12 @@ if st.session_state.admin_mode:
                                     with col_e_name:
                                         st.markdown(f"<div style='margin-top:6px; font-weight:bold;'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
                                     with col_e_prio:
-                                        es_prio = st.checkbox("⭐ Prioritario", key=f"prio_{d_idx}_{b_idx}_{eid}")
+                                        prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
+                                        # Rescatamos el valor del diccionario anti-borrado si la página se recarga
+                                        if prio_key not in st.session_state:
+                                            st.session_state[prio_key] = st.session_state.prio_dict.get(prio_key, False)
+                                            
+                                        es_prio = st.checkbox("⭐ Prioritario", key=prio_key, on_change=_save_prio, args=(prio_key,))
                                     with col_e_up:
                                         if st.button("⬆️", key=f"up_{d_idx}_{b_idx}_{eid}"):
                                             if idx_e > 0:
@@ -744,6 +756,8 @@ if st.session_state.admin_mode:
 
                             bloques_dia.append({
                                 "blockTitle": b_nombre_completo,
+                                "blockCategory": b_cat,
+                                "blockRule": b_regla,
                                 "exercises": ejs_bloque_info
                             })
 
@@ -767,6 +781,7 @@ if st.session_state.admin_mode:
                             "daysData": dias_construidos
                         })
                         save_programs_af(programs_af)
+                        st.session_state.prio_dict = {} # Limpiamos las prioridades tras crear el programa
                         st.success("¡Programa de AF creado con éxito!")
                         
                         nombre_p = get_patient_name(af_paciente)
@@ -826,7 +841,23 @@ else:
                 st.markdown(f"<div style='background:#103d33; color:white; padding:12px 18px; border-radius:10px; font-weight:bold; font-size:18px; margin-top:25px; margin-bottom:15px;'>{day['dayTitle']}</div>", unsafe_allow_html=True)
                 
                 for block in day['blocks']:
-                    st.markdown(f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 {block['blockTitle']}</h4>", unsafe_allow_html=True)
+                    # Lógica para mostrar con diferente estilo la Categoría y la Regla al paciente
+                    b_cat = block.get('blockCategory')
+                    b_rule = block.get('blockRule')
+                    
+                    if b_cat is not None:
+                        if b_rule:
+                            # Limpiamos paréntesis extra si el fisio ya los puso al teclear
+                            b_regla_limpia = b_rule.replace("(", "").replace(")", "").strip()
+                            # Título con Categoría (negrita) + Regla (normal, subrayada amarilla, entre paréntesis)
+                            html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span> <span style='font-weight:400; border-bottom: 3px solid #ffca28; padding-bottom: 1px;'>({b_regla_limpia})</span></h4>"
+                        else:
+                            html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span></h4>"
+                    else:
+                        # Fallback por si hay un programa antiguo guardado
+                        html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{block['blockTitle']}</span></h4>"
+                    
+                    st.markdown(html_titulo, unsafe_allow_html=True)
                     
                     for item in block['exercises']:
                         ex_data = get_exercise(item['exerciseId'])
