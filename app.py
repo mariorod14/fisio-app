@@ -19,7 +19,6 @@ def get_conn():
 conn = get_conn()
 
 # Bandera de seguridad: se reinicia cada vez que carga la app.
-# Si falla la lectura, cambia a True y bloquea los guardados.
 if 'gsheets_read_error' not in st.session_state:
     st.session_state.gsheets_read_error = False
 
@@ -61,7 +60,7 @@ if 'logged_pin' not in st.session_state:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
 # =============================================================
-# FUNCIONES DE LECTURA Y ESCRITURA (CON ESCUDO DE SEGURIDAD)
+# FUNCIONES DE LECTURA Y ESCRITURA
 # =============================================================
 def clean_str(val):
     if pd.isna(val): return ""
@@ -393,7 +392,6 @@ if st.session_state.admin_mode:
             total_ej = len(exercises)
             st.markdown(f"<h3 style='margin-top:10px;'>🎥 Base de Datos de Ejercicios (Total: {total_ej})</h3>", unsafe_allow_html=True)
             
-            # 1. FORMULARIO EXCLUSIVO PARA AÑADIR EJERCICIO RÁPIDO
             with st.form("form_añadir_ejercicio", clear_on_submit=True):
                 st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
                 
@@ -423,7 +421,6 @@ if st.session_state.admin_mode:
             
             st.write("")
             
-            # 2. FORMULARIO PARA EDITAR Y BORRAR LOS EXISTENTES
             with st.form("form_editar_ejercicios"):
                 btn_save = st.form_submit_button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True)
                 
@@ -531,7 +528,7 @@ if st.session_state.admin_mode:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
             else:
                 paciente_sel = st.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name)
-                titulo_sesion = st.text_input("2. Título de la Sesión:")
+                titulo_sesion = st.text_input("2. Título de la Sesión:", placeholder="Ej: Rehabilitación Rodilla...")
                 
                 st.markdown("**3. Selecciona los ejercicios:**")
                 
@@ -589,7 +586,11 @@ if st.session_state.admin_mode:
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
                         
                 if st.button("💾 Generar Sesión", type="primary"):
-                    if titulo_sesion and st.session_state.orden_ejs:
+                    if not titulo_sesion.strip():
+                        st.warning("⚠️ Faltan campos por rellenar: Por favor, introduce un título para la sesión.")
+                    elif not st.session_state.orden_ejs:
+                        st.warning("⚠️ Faltan campos por rellenar: Debes seleccionar al menos un ejercicio.")
+                    else:
                         nuevo_pin = str(random.randint(100000, 999999))
                         plans.append({
                             "id": str(uuid.uuid4())[:4], "patientId": paciente_sel, "title": titulo_sesion,
@@ -604,8 +605,6 @@ if st.session_state.admin_mode:
                         mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
-                    elif not st.session_state.orden_ejs:
-                        st.warning("Debes seleccionar al menos un ejercicio.")
 
     # -------------------------------------------------------------
     # VISTA 3: PROGRAMAS DE AF
@@ -640,7 +639,6 @@ if st.session_state.admin_mode:
             if not patients:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
             else:
-                # Diccionario anti-borrado para guardar el estado de las estrellas de prioridad
                 if "prio_dict" not in st.session_state:
                     st.session_state.prio_dict = {}
                     
@@ -678,7 +676,7 @@ if st.session_state.admin_mode:
                 for d_idx in range(st.session_state.num_dias):
                     st.markdown(f"<div style='background:#f6f8f6; padding:15px; border-radius:12px; border:1px solid #dce7e2; margin-top:15px;'><h4 style='color:#13765d !important; margin:0;'>DÍA {d_idx + 1}</h4></div>", unsafe_allow_html=True)
                     
-                    d_titulo = st.text_input(f"Título del Día {d_idx + 1}:", value=f"DÍA {d_idx + 1}: extremidad superior + CORE" if d_idx==0 else f"DÍA {d_idx + 1}", key=f"dtit_{d_idx}")
+                    d_titulo = st.text_input(f"Título del Día {d_idx + 1}:", placeholder=f"Ej: Día {d_idx + 1}: extremidad superior", key=f"dtit_{d_idx}")
                     
                     key_num_bloques = f"num_bloques_d_{d_idx}"
                     if key_num_bloques not in st.session_state:
@@ -736,7 +734,6 @@ if st.session_state.admin_mode:
                                         st.markdown(f"<div style='margin-top:6px; font-weight:bold;'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
                                     with col_e_prio:
                                         prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
-                                        # Rescatamos el valor del diccionario anti-borrado si la página se recarga
                                         if prio_key not in st.session_state:
                                             st.session_state[prio_key] = st.session_state.prio_dict.get(prio_key, False)
                                             
@@ -768,26 +765,34 @@ if st.session_state.admin_mode:
 
                 st.divider()
                 if st.button("💾 Guardar y Crear Programa de AF", type="primary", use_container_width=True):
-                    if af_titulo and dias_construidos:
-                        nuevo_pin_af = str(random.randint(100000, 999999))
-                        programs_af.append({
-                            "id": str(uuid.uuid4())[:4],
-                            "patientId": af_paciente,
-                            "title": af_titulo,
-                            "frequency": af_frecuencia,
-                            "duration": af_duracion,
-                            "generalNote": af_nota_gen,
-                            "pin": nuevo_pin_af,
-                            "daysData": dias_construidos
-                        })
-                        save_programs_af(programs_af)
-                        st.session_state.prio_dict = {} # Limpiamos las prioridades tras crear el programa
-                        st.success("¡Programa de AF creado con éxito!")
-                        
-                        nombre_p = get_patient_name(af_paciente)
-                        mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu PIN de acceso es: {nuevo_pin_af}\n\n¡A por todas!"
-                        st.info("Copia el mensaje para mandarlo por WhatsApp:")
-                        st.code(mensaje_wa_gen, language="markdown")
+                    # Validación de los campos principales
+                    if not af_titulo.strip() or not af_frecuencia.strip() or not af_duracion.strip():
+                        st.warning("⚠️ Faltan campos por rellenar: Asegúrate de completar el título del programa, la frecuencia y la duración.")
+                    else:
+                        # Validación de que todos los días tengan un título
+                        faltan_titulos_dias = any(not d["dayTitle"].strip() for d in dias_construidos)
+                        if faltan_titulos_dias:
+                            st.warning("⚠️ Faltan campos por rellenar: Comprueba que todos los Días creados tengan un 'Título del Día'.")
+                        else:
+                            nuevo_pin_af = str(random.randint(100000, 999999))
+                            programs_af.append({
+                                "id": str(uuid.uuid4())[:4],
+                                "patientId": af_paciente,
+                                "title": af_titulo,
+                                "frequency": af_frecuencia,
+                                "duration": af_duracion,
+                                "generalNote": af_nota_gen,
+                                "pin": nuevo_pin_af,
+                                "daysData": dias_construidos
+                            })
+                            save_programs_af(programs_af)
+                            st.session_state.prio_dict = {} 
+                            st.success("¡Programa de AF creado con éxito!")
+                            
+                            nombre_p = get_patient_name(af_paciente)
+                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu PIN de acceso es: {nuevo_pin_af}\n\n¡A por todas!"
+                            st.info("Copia el mensaje para mandarlo por WhatsApp:")
+                            st.code(mensaje_wa_gen, language="markdown")
 
 # =============================================================
 # MÓDULO 2: PORTAL DEL PACIENTE / FORMULARIO LOGIN
@@ -841,20 +846,17 @@ else:
                 st.markdown(f"<div style='background:#103d33; color:white; padding:12px 18px; border-radius:10px; font-weight:bold; font-size:18px; margin-top:25px; margin-bottom:15px;'>{day['dayTitle']}</div>", unsafe_allow_html=True)
                 
                 for block in day['blocks']:
-                    # Lógica para mostrar con diferente estilo la Categoría y la Regla al paciente
                     b_cat = block.get('blockCategory')
                     b_rule = block.get('blockRule')
                     
                     if b_cat is not None:
                         if b_rule:
-                            # Limpiamos paréntesis extra si el fisio ya los puso al teclear
                             b_regla_limpia = b_rule.replace("(", "").replace(")", "").strip()
-                            # Título con Categoría (negrita) + Regla (normal, subrayada amarilla, entre paréntesis)
-                            html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span> <span style='font-weight:400; border-bottom: 3px solid #ffca28; padding-bottom: 1px;'>({b_regla_limpia})</span></h4>"
+                            # Aquí se aplica el efecto rotulador / subrayado de fondo amarillo
+                            html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span> <span style='font-weight:400; background-color: #ffeb3b; color: #103d33; padding: 2px 6px; border-radius: 4px; margin-left: 5px;'>({b_regla_limpia})</span></h4>"
                         else:
                             html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span></h4>"
                     else:
-                        # Fallback por si hay un programa antiguo guardado
                         html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{block['blockTitle']}</span></h4>"
                     
                     st.markdown(html_titulo, unsafe_allow_html=True)
