@@ -497,12 +497,18 @@ if st.session_state.admin_mode:
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
 
-                        c1, c2 = st.columns([3, 1])
+                        c1, c2, c3 = st.columns([3, 1, 1])
                         with c1:
                             ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
                             if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
                                 pl["title"] = ed_tit; save_plans(plans); st.rerun()
                         with c2:
+                            st.write(""); st.write("")
+                            with st.popover("📋 Copiar Mensaje"):
+                                st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
+                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {pl['pin']}\n\n¡A por ello!"
+                                st.code(mensaje_wa, language="markdown")
+                        with c3:
                             st.write(""); st.write("")
                             if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
                                 plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
@@ -550,6 +556,8 @@ if st.session_state.admin_mode:
                         st.session_state.orden_ejs.append(e)
                 
                 instrucciones_dict = {}
+                has_missing_videos = False
+
                 if st.session_state.orden_ejs:
                     st.markdown("**4. Configuración y Orden:**")
                     
@@ -562,10 +570,19 @@ if st.session_state.admin_mode:
                     for idx, e_id in enumerate(st.session_state.orden_ejs):
                         ej_obj = get_exercise(e_id)
                         ej_name = ej_obj['name'] if ej_obj else "Ejercicio"
+                        sin_video = False
+                        
+                        # Comprobación de video vacío
+                        if ej_obj and not ej_obj.get("videoUrl", "").strip():
+                            sin_video = True
+                            has_missing_videos = True
+                            ej_name += " ⚠️ (SIN VÍDEO)"
+
                         col_t, col_s, col_r, col_n, col_up, col_dn = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
                         
                         with col_t:
-                            st.markdown(f"<div style='margin-top:8px; font-weight:bold; font-size:14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx + 1}. {ej_name}</div>", unsafe_allow_html=True)
+                            color_texto = "#aa3838" if sin_video else "inherit"
+                            st.markdown(f"<div style='margin-top:8px; font-weight:bold; font-size:14px; color:{color_texto}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx + 1}. {ej_name}</div>", unsafe_allow_html=True)
                         with col_s:
                             s = st.text_input("S", key=f"ser_{e_id}", placeholder="Series", label_visibility="collapsed")
                         with col_r:
@@ -584,7 +601,11 @@ if st.session_state.admin_mode:
                                     st.rerun()
                         
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
-                        
+                
+                st.write("")
+                if has_missing_videos:
+                    st.warning("⚠️ Atención: Hay ejercicios en la lista marcados en rojo que no tienen vídeo asignado en la base de datos. El paciente no tendrá enlace al vídeo para estos ejercicios.")
+
                 if st.button("💾 Generar Sesión", type="primary"):
                     if not titulo_sesion.strip():
                         st.warning("⚠️ Faltan campos por rellenar: Por favor, introduce un título para la sesión.")
@@ -624,12 +645,13 @@ if st.session_state.admin_mode:
                         st.write(f"👤 **Paciente:** {get_patient_name(pr['patientId'])}")
                         st.write(f"⏱️ **Frecuencia:** {pr['frequency']} | **Duración:** {pr['duration']}")
                         
-                        c1, c2 = st.columns([3, 1])
+                        c1, c2, c3 = st.columns([1, 1, 3])
                         with c1:
-                            mensaje_wa = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código PIN de acceso es: {pr['pin']}\n\n¡A entrenar!"
-                            st.text_area("Mensaje de WhatsApp para el paciente:", value=mensaje_wa, height=100, key=f"wa_{pr['id']}")
+                            with st.popover("📋 Copiar Mensaje"):
+                                st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
+                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código PIN de acceso es: {pr['pin']}\n\n¡A entrenar!"
+                                st.code(mensaje_wa_gen, language="markdown")
                         with c2:
-                            st.write(""); st.write("")
                             if st.button("🗑️ Eliminar Programa", key=f"del_af_{pr['id']}"):
                                 programs_af = [x for x in programs_af if str(x["id"]) != str(pr["id"])]
                                 save_programs_af(programs_af)
@@ -672,6 +694,7 @@ if st.session_state.admin_mode:
                     st.rerun()
 
                 dias_construidos = []
+                falta_algun_video_af = False
 
                 for d_idx in range(st.session_state.num_dias):
                     st.markdown(f"<div style='background:#f6f8f6; padding:15px; border-radius:12px; border:1px solid #dce7e2; margin-top:15px;'><h4 style='color:#13765d !important; margin:0;'>DÍA {d_idx + 1}</h4></div>", unsafe_allow_html=True)
@@ -728,10 +751,18 @@ if st.session_state.admin_mode:
                                 for idx_e, eid in enumerate(st.session_state[key_order_af]):
                                     ej_obj = get_exercise(eid)
                                     ename = ej_obj['name'] if ej_obj else "Ejercicio"
+                                    sin_video_af = False
+                                    
+                                    # Comprobar si falta vídeo
+                                    if ej_obj and not ej_obj.get("videoUrl", "").strip():
+                                        sin_video_af = True
+                                        falta_algun_video_af = True
+                                        ename += " ⚠️ (SIN VÍDEO)"
                                     
                                     col_e_name, col_e_prio, col_e_up, col_e_dn = st.columns([4, 2, 0.6, 0.6])
                                     with col_e_name:
-                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold;'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
+                                        color_t = "#aa3838" if sin_video_af else "inherit"
+                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_t};'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
                                     with col_e_prio:
                                         prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
                                         if prio_key not in st.session_state:
@@ -764,6 +795,10 @@ if st.session_state.admin_mode:
                     })
 
                 st.divider()
+                
+                if falta_algun_video_af:
+                    st.warning("⚠️ Atención: Hay ejercicios marcados en rojo que no tienen vídeo de YouTube asignado. El paciente verá el nombre del ejercicio pero no tendrá enlace al vídeo.")
+                    
                 if st.button("💾 Guardar y Crear Programa de AF", type="primary", use_container_width=True):
                     # Validación de los campos principales
                     if not af_titulo.strip() or not af_frecuencia.strip() or not af_duracion.strip():
@@ -852,7 +887,6 @@ else:
                     if b_cat is not None:
                         if b_rule:
                             b_regla_limpia = b_rule.replace("(", "").replace(")", "").strip()
-                            # Aquí se aplica el efecto rotulador / subrayado de fondo amarillo
                             html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span> <span style='font-weight:400; background-color: #ffeb3b; color: #103d33; padding: 2px 6px; border-radius: 4px; margin-left: 5px;'>({b_regla_limpia})</span></h4>"
                         else:
                             html_titulo = f"<h4 style='color:#13765d !important; margin: 15px 0 10px 0;'>📌 <span style='font-weight:800;'>{b_cat}</span></h4>"
@@ -866,7 +900,14 @@ else:
                         if ex_data:
                             prio_badge = "<span style='background:#fff3cd; color:#856404; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold; margin-left:8px;'>⭐ Prioritario</span>" if item.get('isPriority') else ""
                             
-                            card_af_html = f"<div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'><div><span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>{prio_badge}</div><a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a></div>"
+                            # Si no hay vídeo, ocultamos el botón de Ver Vídeo para el paciente
+                            vid_url = ex_data.get('videoUrl', '').strip()
+                            if vid_url:
+                                btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a>"
+                            else:
+                                btn_video = ""
+                                
+                            card_af_html = f"<div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'><div><span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>{prio_badge}</div>{btn_video}</div>"
                             
                             st.markdown(card_af_html, unsafe_allow_html=True)
 
@@ -898,6 +939,9 @@ else:
                         series = inst_data.get("series", "-")
                         reps = inst_data.get("reps", "-")
                         notes = inst_data.get("notes", "")
+                        
+                        vid_url = ex_data.get("videoUrl", "").strip()
+                        btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>" if vid_url else ""
 
                         card_html = f"""
                         <div style='background:#fff; border:1px solid #dce7e2; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0px 4px 15px rgba(0,0,0,0.02);'>
@@ -906,7 +950,7 @@ else:
                                     <h4 style='margin:0 0 5px 0; font-size:18px; color:#103d33 !important;'>{ex_data['name']}</h4>
                                     <span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span>
                                 </div>
-                                <a href='{ex_data['videoUrl']}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>
+                                {btn_video_ses}
                             </div>
                             <div style='display:flex; gap:20px;'>
                                 <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
