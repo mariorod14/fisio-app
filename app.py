@@ -263,7 +263,202 @@ def get_exercise(e_id):
 # MÓDULO 1: ÁREA CLÍNICA
 # =============================================================
 if st.session_state.admin_mode:
-    
+
+    # --- VENTANAS EMERGENTES (MODALES) DE EDICIÓN ---
+    @st.dialog("✏️ Editar Sesión Clínica", width="large")
+    def modal_editar_sesion(pl):
+        pl_id = pl["id"]
+        
+        pac_idx = 0
+        patient_ids = [p["id"] for p in patients]
+        if pl["patientId"] in patient_ids:
+            pac_idx = patient_ids.index(pl["patientId"])
+            
+        paciente_sel = st.selectbox("1. Cambiar Paciente:", options=patient_ids, format_func=get_patient_name, index=pac_idx)
+        titulo_sesion = st.text_input("2. Título de la Sesión:", value=pl["title"])
+        
+        st.markdown("**3. Selecciona los ejercicios:**")
+        ej_options_all = {}
+        for cat in CATEGORIAS_EJ:
+            ej_cat = sorted([x for x in exercises if x.get("category") == cat], key=lambda x: x["name"].lower())
+            for e in ej_cat:
+                ej_options_all[f"{cat}  |  {e['name']}"] = e['id']
+                
+        nombres_actuales = []
+        for eid in st.session_state[f"edit_ses_{pl_id}_ejs"]:
+            eobj = get_exercise(eid)
+            if eobj: nombres_actuales.append(f"{eobj['category']}  |  {eobj['name']}")
+            
+        selected_names = st.multiselect("Buscador de ejercicios", options=list(ej_options_all.keys()), default=nombres_actuales, label_visibility="collapsed")
+        
+        nuevos_ids = [ej_options_all[n] for n in selected_names]
+        st.session_state[f"edit_ses_{pl_id}_ejs"] = [e for e in st.session_state[f"edit_ses_{pl_id}_ejs"] if e in nuevos_ids]
+        for e in nuevos_ids:
+            if e not in st.session_state[f"edit_ses_{pl_id}_ejs"]:
+                st.session_state[f"edit_ses_{pl_id}_ejs"].append(e)
+
+        instrucciones_dict = {}
+        if st.session_state[f"edit_ses_{pl_id}_ejs"]:
+            st.markdown("**4. Configuración y Orden:**")
+            for idx, e_id in enumerate(st.session_state[f"edit_ses_{pl_id}_ejs"]):
+                ej_obj = get_exercise(e_id)
+                ej_name = ej_obj['name'] if ej_obj else "Ejercicio"
+                prev_inst = pl["exerciseInstructions"].get(e_id, {})
+                
+                c_t, c_s, c_r, c_n, c_up, c_dn = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
+                with c_t: 
+                    st.markdown(f"<div style='margin-top:8px; font-size:14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx+1}. {ej_name}</div>", unsafe_allow_html=True)
+                with c_s: 
+                    s = st.text_input("S", value=prev_inst.get("series", ""), key=f"es_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Series")
+                with c_r: 
+                    r = st.text_input("R", value=prev_inst.get("reps", ""), key=f"er_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Reps")
+                with c_n: 
+                    n = st.text_input("N", value=prev_inst.get("notes", ""), key=f"en_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Notas")
+                with c_up:
+                    if st.button("⬆️", key=f"eup_{pl_id}_{e_id}") and idx > 0:
+                        st.session_state[f"edit_ses_{pl_id}_ejs"][idx-1], st.session_state[f"edit_ses_{pl_id}_ejs"][idx] = st.session_state[f"edit_ses_{pl_id}_ejs"][idx], st.session_state[f"edit_ses_{pl_id}_ejs"][idx-1]
+                        st.rerun()
+                with c_dn:
+                    if st.button("⬇️", key=f"edn_{pl_id}_{e_id}") and idx < len(st.session_state[f"edit_ses_{pl_id}_ejs"]) - 1:
+                        st.session_state[f"edit_ses_{pl_id}_ejs"][idx+1], st.session_state[f"edit_ses_{pl_id}_ejs"][idx] = st.session_state[f"edit_ses_{pl_id}_ejs"][idx], st.session_state[f"edit_ses_{pl_id}_ejs"][idx+1]
+                        st.rerun()
+                        
+                instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
+                
+        st.write("")
+        if st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
+            pl["patientId"] = paciente_sel
+            pl["title"] = titulo_sesion
+            pl["exerciseIds"] = st.session_state[f"edit_ses_{pl_id}_ejs"]
+            pl["exerciseInstructions"] = instrucciones_dict
+            save_plans(plans)
+            st.rerun()
+
+    @st.dialog("✏️ Editar Programa de AF", width="large")
+    def modal_editar_programa(pr):
+        pr_id = pr["id"]
+        
+        pac_idx = [p["id"] for p in patients].index(pr["patientId"]) if pr["patientId"] in [p["id"] for p in patients] else 0
+        
+        c1, c2 = st.columns([1, 2])
+        af_paciente = c1.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name, index=pac_idx)
+        af_titulo = c2.text_input("2. Título del programa:", value=pr["title"])
+        
+        c3, c4 = st.columns(2)
+        af_frecuencia = c3.text_input("3. Frecuencia semanal:", value=pr["frequency"])
+        af_duracion = c4.text_input("4. Duración por sesión:", value=pr["duration"])
+        af_nota = st.text_input("5. Nota general:", value=pr["generalNote"])
+        
+        st.divider()
+        st.markdown("### 📅 Días y Bloques")
+        
+        cb1, cb2 = st.columns(2)
+        if cb1.button("➕ Añadir Día al Plan"):
+            st.session_state[f"edit_af_{pr_id}_dias"] += 1
+            st.rerun()
+        if cb2.button("➖ Quitar Último Día") and st.session_state[f"edit_af_{pr_id}_dias"] > 1:
+            st.session_state[f"edit_af_{pr_id}_dias"] -= 1
+            st.rerun()
+            
+        dias_construidos = []
+        for d_idx in range(st.session_state[f"edit_af_{pr_id}_dias"]):
+            st.markdown(f"<div style='background:#f6f8f6; padding:15px; border-radius:12px; border:1px solid #dce7e2; margin-top:15px;'><h4 style='color:#13765d !important; margin:0;'>DÍA {d_idx + 1}</h4></div>", unsafe_allow_html=True)
+            
+            def_d_title = pr["daysData"][d_idx]["dayTitle"] if d_idx < len(pr["daysData"]) else f"Día {d_idx+1}"
+            d_titulo = st.text_input(f"Título del Día {d_idx+1}:", value=def_d_title, key=f"edit_dtit_{pr_id}_{d_idx}")
+            
+            if f"edit_af_{pr_id}_b_{d_idx}" not in st.session_state:
+                st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] = 1
+                
+            cc1, cc2 = st.columns(2)
+            if cc1.button(f"➕ Añadir Bloque al Día {d_idx+1}", key=f"eaddB_{pr_id}_{d_idx}"):
+                st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] += 1
+                st.rerun()
+            if cc2.button(f"➖ Quitar Bloque al Día {d_idx+1}", key=f"esubB_{pr_id}_{d_idx}") and st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] > 1:
+                st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] -= 1
+                st.rerun()
+                
+            bloques_dia = []
+            for b_idx in range(st.session_state[f"edit_af_{pr_id}_b_{d_idx}"]):
+                with st.container(border=True):
+                    old_block = None
+                    if d_idx < len(pr["daysData"]) and b_idx < len(pr["daysData"][d_idx]["blocks"]):
+                        old_block = pr["daysData"][d_idx]["blocks"][b_idx]
+                        
+                    def_cat = old_block["blockCategory"] if old_block and old_block["blockCategory"] in CATEGORIAS_EJ else CATEGORIAS_EJ[0]
+                    def_rule = old_block["blockRule"] if old_block else ""
+                    
+                    col_bcat, col_breg = st.columns([1, 2])
+                    b_cat = col_bcat.selectbox("Categoría:", CATEGORIAS_EJ, index=CATEGORIAS_EJ.index(def_cat), key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
+                    b_regla = col_breg.text_input("Regla / Indicación:", value=def_rule, key=f"ebreg_{pr_id}_{d_idx}_{b_idx}")
+                    
+                    ej_cat_filtrados = sorted([e for e in exercises if e.get("category") == b_cat], key=lambda x: x["name"].lower())
+                    ej_options_block = {e["name"]: e["id"] for e in ej_cat_filtrados}
+                    
+                    if f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}" not in st.session_state:
+                        st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = []
+                        
+                    current_block_ids = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"]
+                    default_names = [get_exercise(eid)["name"] for eid in current_block_ids if get_exercise(eid) and get_exercise(eid)["category"] == b_cat]
+                    
+                    b_selected_names = st.multiselect("Ejercicios:", options=list(ej_options_block.keys()), default=default_names, key=f"ebsel_{pr_id}_{d_idx}_{b_idx}", label_visibility="collapsed")
+                    
+                    new_ids = [ej_options_block[n] for n in b_selected_names]
+                    st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = [e for e in st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] if e in new_ids]
+                    for e in new_ids:
+                        if e not in st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"]:
+                            st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"].append(e)
+                            
+                    ejs_bloque_info = []
+                    for idx_e, eid in enumerate(st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"]):
+                        ename = get_exercise(eid)['name'] if get_exercise(eid) else "Ejercicio"
+                        
+                        def_prio = False
+                        if old_block:
+                            for ex_old in old_block["exercises"]:
+                                if ex_old["exerciseId"] == eid:
+                                    def_prio = ex_old.get("isPriority", False)
+                                    break
+                                    
+                        prio_key = f"eprio_{pr_id}_{d_idx}_{b_idx}_{eid}"
+                        if prio_key not in st.session_state:
+                            st.session_state[prio_key] = def_prio
+                            
+                        ce1, ce2, ce3, ce4 = st.columns([4, 2, 0.6, 0.6])
+                        ce1.markdown(f"<div style='margin-top:6px; font-weight:bold;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
+                        es_prio = ce2.checkbox("⭐ Prioritario", key=prio_key)
+                        if ce3.button("⬆️", key=f"eup_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
+                            st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1]
+                            st.rerun()
+                        if ce4.button("⬇️", key=f"edn_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e < len(st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"])-1:
+                            st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1]
+                            st.rerun()
+                            
+                        ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio})
+                        
+                    bloques_dia.append({
+                        "blockTitle": f"{b_cat} {b_regla}".strip(),
+                        "blockCategory": b_cat,
+                        "blockRule": b_regla,
+                        "exercises": ejs_bloque_info
+                    })
+            dias_construidos.append({
+                "dayTitle": d_titulo,
+                "blocks": bloques_dia
+            })
+            
+        st.write("")
+        if st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
+            pr["patientId"] = af_paciente
+            pr["title"] = af_titulo
+            pr["frequency"] = af_frecuencia
+            pr["duration"] = af_duracion
+            pr["generalNote"] = af_nota
+            pr["daysData"] = dias_construidos
+            save_programs_af(programs_af)
+            st.rerun()
+    # --- FIN DE VENTANAS EMERGENTES ---
+
     st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
     
     menu_seleccion = st.sidebar.radio(
@@ -361,7 +556,7 @@ if st.session_state.admin_mode:
                     if progs_del_paciente:
                         st.markdown("**Programas de AF:**")
                         for pr in reversed(progs_del_paciente):
-                            st.write(f"- 🏋️ {pr['title']} (PIN: {pr['pin']})")
+                            st.write(f"- {pr['title']} (PIN: {pr['pin']})")
 
                     if not sesiones_del_paciente and not progs_del_paciente:
                         st.write("No tiene planes ni programas asignados todavía.")
@@ -475,7 +670,7 @@ if st.session_state.admin_mode:
     # -------------------------------------------------------------
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
-        tab_ses_act, tab_checkins, tab_crear_ses = st.tabs(["⚙️ Sesiones Actuales", "📊 Check-ins", "📝 Crear Nueva Sesión"])
+        tab_ses_act, tab_checkins, tab_crear_ses = st.tabs(["⚙️ Sesiones Activas", "📊 Check-ins", "📝 Crear Nueva Sesión"])
         
         with tab_ses_act:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
@@ -497,20 +692,21 @@ if st.session_state.admin_mode:
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
 
-                        c1, c2, c3 = st.columns([3, 1, 1])
-                        with c1:
-                            ed_tit = st.text_input("Cambiar Título:", value=pl["title"], key=f"tit_{pl['id']}")
-                            if st.button("💾 Guardar Título", key=f"sav_{pl['id']}", type="primary"):
-                                pl["title"] = ed_tit; save_plans(plans); st.rerun()
-                        with c2:
-                            st.write(""); st.write("")
-                            with st.popover("📋 Copiar Mensaje"):
+                        # Área de botones
+                        st.write("")
+                        c_espacio, c_edit, c_copy, c_del = st.columns([6, 1.2, 1.4, 1.2])
+                        with c_edit:
+                            if st.button("✏️ Editar", key=f"edit_btn_{pl['id']}", use_container_width=True):
+                                # Pre-cargar el estado de la lista de ejercicios para el modal
+                                st.session_state[f"edit_ses_{pl['id']}_ejs"] = pl["exerciseIds"].copy()
+                                modal_editar_sesion(pl)
+                        with c_copy:
+                            with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
                                 mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {pl['pin']}\n\n¡A por ello!"
                                 st.code(mensaje_wa, language="markdown")
-                        with c3:
-                            st.write(""); st.write("")
-                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}"):
+                        with c_del:
+                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}", use_container_width=True):
                                 plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
                                 save_plans(plans); st.rerun()
 
@@ -572,7 +768,6 @@ if st.session_state.admin_mode:
                         ej_name = ej_obj['name'] if ej_obj else "Ejercicio"
                         sin_video = False
                         
-                        # Comprobación de video vacío
                         if ej_obj and not ej_obj.get("videoUrl", "").strip():
                             sin_video = True
                             has_missing_videos = True
@@ -635,24 +830,43 @@ if st.session_state.admin_mode:
         tab_gest_af, tab_crear_af = st.tabs(["⚙️ Programas Activos", "📝 Crear Nuevo Programa AF"])
         
         with tab_gest_af:
-            if not programs_af:
-                st.info("No hay programas de AF creados todavía.")
+            search_query_af = st.text_input("🔍 Buscar programa por título o nombre del paciente:")
+            progs_filtrados = list(reversed(programs_af))
+            
+            if search_query_af:
+                q_af = search_query_af.lower()
+                progs_filtrados = [pr for pr in progs_filtrados if q_af in pr["title"].lower() or q_af in get_patient_name(pr["patientId"]).lower()]
+
+            if not progs_filtrados:
+                st.info("No hay programas de AF que coincidan con la búsqueda.")
             else:
-                for pr in reversed(programs_af):
+                for pr in progs_filtrados:
                     with st.container(border=True):
-                        st.markdown(f"#### 🏋️ {pr['title']}")
+                        st.markdown(f"#### {pr['title']}")
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pr['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pr['patientId'])}")
                         st.write(f"⏱️ **Frecuencia:** {pr['frequency']} | **Duración:** {pr['duration']}")
                         
-                        c1, c2, c3 = st.columns([1, 1, 3])
-                        with c1:
-                            with st.popover("📋 Copiar Mensaje"):
+                        st.write("")
+                        c_espacio, c_edit, c_copy, c_del = st.columns([6, 1.2, 1.4, 1.2])
+                        with c_edit:
+                            if st.button("✏️ Editar", key=f"edit_btn_af_{pr['id']}", use_container_width=True):
+                                # Inicializar la estructura dinámica del programa para el modal
+                                pr_id = pr["id"]
+                                st.session_state[f"edit_af_{pr_id}_dias"] = max(1, len(pr["daysData"]))
+                                for d_idx, day in enumerate(pr["daysData"]):
+                                    st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] = max(1, len(day.get("blocks", [])))
+                                    for b_idx, block in enumerate(day.get("blocks", [])):
+                                        st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = [e["exerciseId"] for e in block.get("exercises", [])]
+                                
+                                modal_editar_programa(pr)
+                        with c_copy:
+                            with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
                                 mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código PIN de acceso es: {pr['pin']}\n\n¡A entrenar!"
                                 st.code(mensaje_wa_gen, language="markdown")
-                        with c2:
-                            if st.button("🗑️ Eliminar Programa", key=f"del_af_{pr['id']}"):
+                        with c_del:
+                            if st.button("🗑️ Eliminar", key=f"del_af_{pr['id']}", use_container_width=True):
                                 programs_af = [x for x in programs_af if str(x["id"]) != str(pr["id"])]
                                 save_programs_af(programs_af)
                                 st.rerun()
@@ -753,7 +967,6 @@ if st.session_state.admin_mode:
                                     ename = ej_obj['name'] if ej_obj else "Ejercicio"
                                     sin_video_af = False
                                     
-                                    # Comprobar si falta vídeo
                                     if ej_obj and not ej_obj.get("videoUrl", "").strip():
                                         sin_video_af = True
                                         falta_algun_video_af = True
@@ -800,11 +1013,9 @@ if st.session_state.admin_mode:
                     st.warning("⚠️ Atención: Hay ejercicios marcados en rojo que no tienen vídeo de YouTube asignado. El paciente verá el nombre del ejercicio pero no tendrá enlace al vídeo.")
                     
                 if st.button("💾 Guardar y Crear Programa de AF", type="primary", use_container_width=True):
-                    # Validación de los campos principales
                     if not af_titulo.strip() or not af_frecuencia.strip() or not af_duracion.strip():
                         st.warning("⚠️ Faltan campos por rellenar: Asegúrate de completar el título del programa, la frecuencia y la duración.")
                     else:
-                        # Validación de que todos los días tengan un título
                         faltan_titulos_dias = any(not d["dayTitle"].strip() for d in dias_construidos)
                         if faltan_titulos_dias:
                             st.warning("⚠️ Faltan campos por rellenar: Comprueba que todos los Días creados tengan un 'Título del Día'.")
@@ -900,7 +1111,6 @@ else:
                         if ex_data:
                             prio_badge = "<span style='background:#fff3cd; color:#856404; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold; margin-left:8px;'>⭐ Prioritario</span>" if item.get('isPriority') else ""
                             
-                            # Si no hay vídeo, ocultamos el botón de Ver Vídeo para el paciente
                             vid_url = ex_data.get('videoUrl', '').strip()
                             if vid_url:
                                 btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a>"
