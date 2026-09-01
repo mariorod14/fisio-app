@@ -382,11 +382,12 @@ if st.session_state.admin_mode:
             for b_idx in range(st.session_state[f"edit_af_{pr_id}_b_{d_idx}"]):
                 with st.container(border=True):
                     old_block = None
-                    if d_idx < len(pr["daysData"]) and b_idx < len(pr["daysData"][d_idx]["blocks"]):
+                    if d_idx < len(pr["daysData"]) and b_idx < len(pr["daysData"][d_idx].get("blocks", [])):
                         old_block = pr["daysData"][d_idx]["blocks"][b_idx]
                         
-                    def_cat = old_block["blockCategory"] if old_block and old_block["blockCategory"] in CATEGORIAS_EJ else CATEGORIAS_EJ[0]
-                    def_rule = old_block["blockRule"] if old_block else ""
+                    # 🔧 CORRECCIÓN AQUÍ: Usamos .get() de forma segura para evitar el KeyError
+                    def_cat = old_block.get("blockCategory") if old_block and old_block.get("blockCategory") in CATEGORIAS_EJ else CATEGORIAS_EJ[0]
+                    def_rule = old_block.get("blockRule", "") if old_block else ""
                     
                     col_bcat, col_breg = st.columns([1, 2])
                     b_cat = col_bcat.selectbox("Categoría:", CATEGORIAS_EJ, index=CATEGORIAS_EJ.index(def_cat), key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
@@ -415,8 +416,9 @@ if st.session_state.admin_mode:
                         
                         def_prio = False
                         if old_block:
-                            for ex_old in old_block["exercises"]:
-                                if ex_old["exerciseId"] == eid:
+                            # 🔧 CORRECCIÓN AQUÍ TAMBIÉN para que tampoco falle al buscar los ejercicios
+                            for ex_old in old_block.get("exercises", []):
+                                if ex_old.get("exerciseId") == eid:
                                     def_prio = ex_old.get("isPriority", False)
                                     break
                                     
