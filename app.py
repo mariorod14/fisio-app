@@ -537,10 +537,10 @@ if st.session_state.admin_mode:
                     new_p_name = c_np1.text_input("Nombre completo:")
                     new_p_phone = c_np2.text_input("Teléfono:")
                     
-                    new_p_ana = st.text_area("Anamnesis (preguntas, historia...):")
-                    new_p_ins = st.text_area("Inspección física (coloración, palpación...):")
-                    new_p_mov = st.text_area("Movilidad activa y pasiva:")
-                    new_p_fue = st.text_area("Fuerza:")
+                    new_p_ana = st.text_area("Anamnesis (entrevista, historia clínica...):")
+                    new_p_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):")
+                    new_p_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):")
+                    new_p_fue = st.text_area("Fuerza (dinamometría...):")
                     
                     if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                         if new_p_name:
@@ -591,10 +591,10 @@ if st.session_state.admin_mode:
                     edit_name = ce1.text_input("Nombre del paciente", value=p["name"], key=f"name_{p['id']}")
                     edit_phone = ce2.text_input("Teléfono", value=p.get("phone", ""), key=f"phone_{p['id']}")
                     
-                    edit_ana = st.text_area("Anamnesis", value=p.get("anamnesis", ""), key=f"ana_{p['id']}")
-                    edit_ins = st.text_area("Inspección física", value=p.get("inspeccion", ""), key=f"ins_{p['id']}")
-                    edit_mov = st.text_area("Movilidad activa y pasiva", value=p.get("movilidad", ""), key=f"mov_{p['id']}")
-                    edit_fue = st.text_area("Fuerza", value=p.get("fuerza", ""), key=f"fue_{p['id']}")
+                    edit_ana = st.text_area("Anamnesis (entrevista, historia clínica...):", value=p.get("anamnesis", ""), key=f"ana_{p['id']}")
+                    edit_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):", value=p.get("inspeccion", ""), key=f"ins_{p['id']}")
+                    edit_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):", value=p.get("movilidad", ""), key=f"mov_{p['id']}")
+                    edit_fue = st.text_area("Fuerza (dinamometría...):", value=p.get("fuerza", ""), key=f"fue_{p['id']}")
                     
                     c1, c2 = st.columns(2)
                     if c1.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
@@ -693,7 +693,8 @@ if st.session_state.admin_mode:
     # -------------------------------------------------------------
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
-        tab_ses_act, tab_checkins, tab_crear_ses = st.tabs(["⚙️ Sesiones Activas", "📊 Check-ins", "📝 Crear Nueva Sesión"])
+        # Cambio en el orden de las pestañas
+        tab_ses_act, tab_crear_ses, tab_checkins = st.tabs(["⚙️ Sesiones Activas", "📝 Crear Nueva Sesión", "📊 Check-ins"])
         
         with tab_ses_act:
             if st.session_state.get("editing_sesion_id"):
@@ -738,21 +739,6 @@ if st.session_state.admin_mode:
                             if st.button("🗑️ Eliminar", key=f"del_{pl['id']}", use_container_width=True):
                                 plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
                                 save_plans(plans); st.rerun()
-
-        with tab_checkins:
-            st.markdown("<h3 style='margin-top:10px;'>Reportes de Carga de Pacientes</h3>", unsafe_allow_html=True)
-            if not checkins:
-                st.info("Aún no hay reportes registrados por pacientes para sus sesiones.")
-            else:
-                for plan in reversed(plans):
-                    c_plan = [c for c in checkins if str(c.get("planId")) == str(plan["id"])]
-                    if c_plan:
-                        with st.expander(f"📁 {get_patient_name(plan['patientId'])} - {plan['title']}"):
-                            for ch in reversed(c_plan):
-                                st.markdown(f"**📅 {ch['date']}**")
-                                st.markdown(f"**EVA:** {ch['eva']} / 10 | **Borg:** {ch['borg']} / 10")
-                                st.markdown(f"*{ch['comment']}*")
-                                st.divider()
 
         with tab_crear_ses:
             if not patients:
@@ -851,6 +837,21 @@ if st.session_state.admin_mode:
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
 
+        with tab_checkins:
+            st.markdown("<h3 style='margin-top:10px;'>Reportes de Carga de Pacientes</h3>", unsafe_allow_html=True)
+            if not checkins:
+                st.info("Aún no hay reportes registrados por pacientes para sus sesiones.")
+            else:
+                for plan in reversed(plans):
+                    c_plan = [c for c in checkins if str(c.get("planId")) == str(plan["id"])]
+                    if c_plan:
+                        with st.expander(f"📁 {get_patient_name(plan['patientId'])} - {plan['title']}"):
+                            for ch in reversed(c_plan):
+                                st.markdown(f"**📅 {ch['date']}**")
+                                st.markdown(f"**EVA:** {ch['eva']} / 10 | **Borg:** {ch['borg']} / 10")
+                                st.markdown(f"*{ch['comment']}*")
+                                st.divider()
+
     # -------------------------------------------------------------
     # VISTA 3: PROGRAMAS DE AF
     # -------------------------------------------------------------
@@ -922,9 +923,16 @@ if st.session_state.admin_mode:
                 af_paciente = col_p.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name, key="af_pac")
                 af_titulo = col_t.text_input("2. Título del programa:", placeholder="Ej: Trabajo de fuerza ANA")
                 
+                # Configuración de Frecuencia y Duración con formato automático (Diseño optimizado)
                 col_f, col_d = st.columns(2)
-                af_frecuencia = col_f.text_input("3. Frecuencia semanal:", placeholder="Ej: 3 días a la semana")
-                af_duracion = col_d.text_input("4. Duración por sesión:", placeholder="Ej: 20-30 minutos al día")
+                
+                c_f1, c_f2 = col_f.columns([0.75, 0.25])
+                af_frecuencia = c_f1.text_input("3. Frecuencia semanal:", placeholder="Ej: 3 o 3-4")
+                c_f2.markdown("<div style='margin-top: 35px; color: #64756e; font-size: 15px;'>días/semana</div>", unsafe_allow_html=True)
+                
+                c_d1, c_d2 = col_d.columns([0.75, 0.25])
+                af_duracion = c_d1.text_input("4. Duración por sesión:", placeholder="Ej: 20-30")
+                c_d2.markdown("<div style='margin-top: 35px; color: #64756e; font-size: 15px;'>minutos/día</div>", unsafe_allow_html=True)
                 
                 af_nota_gen = st.text_input("5. Nota general explicativa:", value="*Los ejercicios con estrella ⭐ son los más recomendados para ti de cada bloque.")
                 
@@ -1056,12 +1064,17 @@ if st.session_state.admin_mode:
                             st.warning("⚠️ Faltan campos por rellenar: Comprueba que todos los Días creados tengan un 'Título del Día'.")
                         else:
                             nuevo_pin_af = str(random.randint(100000, 999999))
+                            
+                            # Concatenamos automáticamente el texto a los números introducidos
+                            frecuencia_guardar = f"{af_frecuencia.strip()} días/semana" if af_frecuencia.strip() else ""
+                            duracion_guardar = f"{af_duracion.strip()} minutos/día" if af_duracion.strip() else ""
+                            
                             programs_af.append({
                                 "id": str(uuid.uuid4())[:4],
                                 "patientId": af_paciente,
                                 "title": af_titulo,
-                                "frequency": af_frecuencia,
-                                "duration": af_duracion,
+                                "frequency": frecuencia_guardar,
+                                "duration": duracion_guardar,
                                 "generalNote": af_nota_gen,
                                 "pin": nuevo_pin_af,
                                 "daysData": dias_construidos
