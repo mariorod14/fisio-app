@@ -56,6 +56,10 @@ if 'admin_mode' not in st.session_state:
     st.session_state.admin_mode = False
 if 'logged_pin' not in st.session_state:
     st.session_state.logged_pin = None
+if 'editing_sesion_id' not in st.session_state:
+    st.session_state.editing_sesion_id = None
+if 'editing_program_id' not in st.session_state:
+    st.session_state.editing_program_id = None
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
@@ -284,6 +288,9 @@ if st.session_state.admin_mode:
             for e in ej_cat:
                 ej_options_all[f"{cat}  |  {e['name']}"] = e['id']
                 
+        if f"edit_ses_{pl_id}_ejs" not in st.session_state:
+            st.session_state[f"edit_ses_{pl_id}_ejs"] = pl["exerciseIds"].copy()
+
         nombres_actuales = []
         for eid in st.session_state[f"edit_ses_{pl_id}_ejs"]:
             eobj = get_exercise(eid)
@@ -326,12 +333,17 @@ if st.session_state.admin_mode:
                 instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
                 
         st.write("")
-        if st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
+        c_save, c_cancel = st.columns([2, 1])
+        if c_save.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
             pl["patientId"] = paciente_sel
             pl["title"] = titulo_sesion
             pl["exerciseIds"] = st.session_state[f"edit_ses_{pl_id}_ejs"]
             pl["exerciseInstructions"] = instrucciones_dict
             save_plans(plans)
+            st.session_state.editing_sesion_id = None
+            st.rerun()
+        if c_cancel.button("❌ Cancelar", use_container_width=True):
+            st.session_state.editing_sesion_id = None
             st.rerun()
 
     @st.dialog("✏️ Editar Programa de AF", width="large")
@@ -352,6 +364,9 @@ if st.session_state.admin_mode:
         st.divider()
         st.markdown("### 📅 Días y Bloques")
         
+        if f"edit_af_{pr_id}_dias" not in st.session_state:
+            st.session_state[f"edit_af_{pr_id}_dias"] = max(1, len(pr["daysData"]))
+
         cb1, cb2 = st.columns(2)
         if cb1.button("➕ Añadir Día al Plan"):
             st.session_state[f"edit_af_{pr_id}_dias"] += 1
@@ -368,7 +383,7 @@ if st.session_state.admin_mode:
             d_titulo = st.text_input(f"Título del Día {d_idx+1}:", value=def_d_title, key=f"edit_dtit_{pr_id}_{d_idx}")
             
             if f"edit_af_{pr_id}_b_{d_idx}" not in st.session_state:
-                st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] = 1
+                st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] = max(1, len(pr["daysData"][d_idx].get("blocks", []))) if d_idx < len(pr["daysData"]) else 1
                 
             cc1, cc2 = st.columns(2)
             if cc1.button(f"➕ Añadir Bloque al Día {d_idx+1}", key=f"eaddB_{pr_id}_{d_idx}"):
@@ -385,7 +400,6 @@ if st.session_state.admin_mode:
                     if d_idx < len(pr["daysData"]) and b_idx < len(pr["daysData"][d_idx].get("blocks", [])):
                         old_block = pr["daysData"][d_idx]["blocks"][b_idx]
                         
-                    # 🔧 CORRECCIÓN AQUÍ: Usamos .get() de forma segura para evitar el KeyError
                     def_cat = old_block.get("blockCategory") if old_block and old_block.get("blockCategory") in CATEGORIAS_EJ else CATEGORIAS_EJ[0]
                     def_rule = old_block.get("blockRule", "") if old_block else ""
                     
@@ -397,7 +411,10 @@ if st.session_state.admin_mode:
                     ej_options_block = {e["name"]: e["id"] for e in ej_cat_filtrados}
                     
                     if f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}" not in st.session_state:
-                        st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = []
+                        default_ids = []
+                        if old_block:
+                            default_ids = [ex["exerciseId"] for ex in old_block.get("exercises", [])]
+                        st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = default_ids
                         
                     current_block_ids = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"]
                     default_names = [get_exercise(eid)["name"] for eid in current_block_ids if get_exercise(eid) and get_exercise(eid)["category"] == b_cat]
@@ -416,7 +433,6 @@ if st.session_state.admin_mode:
                         
                         def_prio = False
                         if old_block:
-                            # 🔧 CORRECCIÓN AQUÍ TAMBIÉN para que tampoco falle al buscar los ejercicios
                             for ex_old in old_block.get("exercises", []):
                                 if ex_old.get("exerciseId") == eid:
                                     def_prio = ex_old.get("isPriority", False)
@@ -450,7 +466,8 @@ if st.session_state.admin_mode:
             })
             
         st.write("")
-        if st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
+        c_save, c_cancel = st.columns([2, 1])
+        if c_save.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True):
             pr["patientId"] = af_paciente
             pr["title"] = af_titulo
             pr["frequency"] = af_frecuencia
@@ -458,6 +475,10 @@ if st.session_state.admin_mode:
             pr["generalNote"] = af_nota
             pr["daysData"] = dias_construidos
             save_programs_af(programs_af)
+            st.session_state.editing_program_id = None
+            st.rerun()
+        if c_cancel.button("❌ Cancelar", use_container_width=True):
+            st.session_state.editing_program_id = None
             st.rerun()
     # --- FIN DE VENTANAS EMERGENTES ---
 
@@ -675,6 +696,13 @@ if st.session_state.admin_mode:
         tab_ses_act, tab_checkins, tab_crear_ses = st.tabs(["⚙️ Sesiones Activas", "📊 Check-ins", "📝 Crear Nueva Sesión"])
         
         with tab_ses_act:
+            if st.session_state.get("editing_sesion_id"):
+                target_ses = next((pl for pl in plans if str(pl["id"]) == str(st.session_state.editing_sesion_id)), None)
+                if target_ses:
+                    modal_editar_sesion(target_ses)
+                else:
+                    st.session_state.editing_sesion_id = None
+
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
             sesiones_actuales = {}
@@ -694,14 +722,13 @@ if st.session_state.admin_mode:
                         st.markdown(f"<span style='background:#e9f6f0; color:#13765d; padding:7px 10px; border-radius:7px; font-size:12px; font-weight:bold;'>PIN: {pl['pin']}</span>", unsafe_allow_html=True)
                         st.write(f"👤 **Paciente:** {get_patient_name(pl['patientId'])}")
 
-                        # Área de botones
                         st.write("")
                         c_espacio, c_edit, c_copy, c_del = st.columns([6, 1.2, 1.4, 1.2])
                         with c_edit:
                             if st.button("✏️ Editar", key=f"edit_btn_{pl['id']}", use_container_width=True):
-                                # Pre-cargar el estado de la lista de ejercicios para el modal
+                                st.session_state.editing_sesion_id = pl["id"]
                                 st.session_state[f"edit_ses_{pl['id']}_ejs"] = pl["exerciseIds"].copy()
-                                modal_editar_sesion(pl)
+                                st.rerun()
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
@@ -832,6 +859,13 @@ if st.session_state.admin_mode:
         tab_gest_af, tab_crear_af = st.tabs(["⚙️ Programas Activos", "📝 Crear Nuevo Programa AF"])
         
         with tab_gest_af:
+            if st.session_state.get("editing_program_id"):
+                target_pr = next((pr for pr in programs_af if str(pr["id"]) == str(st.session_state.editing_program_id)), None)
+                if target_pr:
+                    modal_editar_programa(target_pr)
+                else:
+                    st.session_state.editing_program_id = None
+
             search_query_af = st.text_input("🔍 Buscar programa por título o nombre del paciente:")
             progs_filtrados = list(reversed(programs_af))
             
@@ -853,15 +887,14 @@ if st.session_state.admin_mode:
                         c_espacio, c_edit, c_copy, c_del = st.columns([6, 1.2, 1.4, 1.2])
                         with c_edit:
                             if st.button("✏️ Editar", key=f"edit_btn_af_{pr['id']}", use_container_width=True):
-                                # Inicializar la estructura dinámica del programa para el modal
                                 pr_id = pr["id"]
+                                st.session_state.editing_program_id = pr_id
                                 st.session_state[f"edit_af_{pr_id}_dias"] = max(1, len(pr["daysData"]))
                                 for d_idx, day in enumerate(pr["daysData"]):
                                     st.session_state[f"edit_af_{pr_id}_b_{d_idx}"] = max(1, len(day.get("blocks", [])))
                                     for b_idx, block in enumerate(day.get("blocks", [])):
                                         st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"] = [e["exerciseId"] for e in block.get("exercises", [])]
-                                
-                                modal_editar_programa(pr)
+                                st.rerun()
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
