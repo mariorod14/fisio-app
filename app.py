@@ -1251,7 +1251,8 @@ else:
                 
                 st.markdown("<h3 style='margin-bottom:20px; font-size:22px; color:#103d33 !important;'>🎥 Lista de Ejercicios</h3>", unsafe_allow_html=True)
                 
-                for ex_id in sesion_encontrada["exerciseIds"]:
+                # RECORRIDO CON ENUMERATE PARA SACAR EL ÍNDICE (1, 2, 3...)
+                for idx, ex_id in enumerate(sesion_encontrada["exerciseIds"]):
                     ex_data = get_exercise(ex_id)
                     inst_data = sesion_encontrada["exerciseInstructions"].get(ex_id, {})
                     
@@ -1263,14 +1264,15 @@ else:
                         vid_url = ex_data.get("videoUrl", "").strip()
                         btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>" if vid_url else ""
 
+                        # NUEVA ESTRUCTURA HTML SEGÚN TUS INDICACIONES
                         card_html = f"""
                         <div style='background:#fff; border:1px solid #dce7e2; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0px 4px 15px rgba(0,0,0,0.02);'>
+                            <div style='margin-bottom:15px;'>
+                                <h4 style='margin:0; font-size:18px; color:#103d33 !important;'>{idx + 1}. {ex_data['name']}</h4>
+                            </div>
                             <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #f0f4f2; padding-bottom:15px;'>
-                                <div>
-                                    <h4 style='margin:0 0 5px 0; font-size:18px; color:#103d33 !important;'>{ex_data['name']}</h4>
-                                    <span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span>
-                                </div>
-                                {btn_video_ses}
+                                <div>{btn_video_ses}</div>
+                                <div><span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span></div>
                             </div>
                             <div style='display:flex; gap:20px;'>
                                 <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
