@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import altair as alt
 import datetime
 import random
 import uuid
@@ -874,7 +875,6 @@ if st.session_state.admin_mode:
                 else:
                     # Preparar los datos con pandas
                     df_checkins = pd.DataFrame(checkins_paciente)
-                    # Convertimos la fecha a objeto datetime para ordenar cronológicamente
                     df_checkins['date_obj'] = pd.to_datetime(df_checkins['date'], format="%Y-%m-%d %H:%M", errors='coerce')
                     df_checkins = df_checkins.sort_values(by='date_obj')
                     
@@ -882,17 +882,36 @@ if st.session_state.admin_mode:
                     df_checkins['eva'] = pd.to_numeric(df_checkins['eva'], errors='coerce').fillna(0)
                     df_checkins['borg'] = pd.to_numeric(df_checkins['borg'], errors='coerce').fillna(0)
                     
-                    # Preparar dataframe para el gráfico
-                    df_chart = df_checkins.set_index('date')[['eva', 'borg']]
-                    df_chart = df_chart.rename(columns={'eva': 'Dolor (EVA)', 'borg': 'Fatiga (Borg)'})
+                    # --- NUEVOS FORMATOS DE FECHA ---
+                    # Para la gráfica (Solo día/mes/año)
+                    df_checkins['Fecha_Corta'] = df_checkins['date_obj'].dt.strftime('%d/%m/%Y')
+                    # Para la tabla de comentarios (Día/mes/año Hora:Minuto)
+                    df_checkins['Fecha_Larga'] = df_checkins['date_obj'].dt.strftime('%d/%m/%Y %H:%M')
                     
                     st.markdown("#### 📊 Gráfica de Dolor y Fatiga")
-                    # Color rojo para el dolor (EVA) y verde corporativo para la fatiga (Borg)
-                    st.line_chart(df_chart, color=["#aa3838", "#13765d"])
+                    
+                    # Preparar dataframe estructurado para Altair
+                    df_melted = df_checkins[['Fecha_Corta', 'eva', 'borg']].copy()
+                    df_melted = df_melted.rename(columns={'eva': 'Dolor (EVA)', 'borg': 'Fatiga (Borg)'})
+                    # "Derretir" los datos para que Altair entienda las dos líneas
+                    df_melted = df_melted.melt('Fecha_Corta', var_name='Métrica', value_name='Puntuación')
+                    
+                    # --- CREACIÓN DE LA GRÁFICA FIJA ---
+                    grafica = alt.Chart(df_melted).mark_line(point=True).encode(
+                        x=alt.X('Fecha_Corta:N', title='Fecha', sort=None, axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('Puntuación:Q', scale=alt.Scale(domain=[0, 10]), title='Escala (0-10)'),
+                        color=alt.Color('Métrica:N', scale=alt.Scale(
+                            domain=['Dolor (EVA)', 'Fatiga (Borg)'], 
+                            range=["#aa3838", "#13765d"]
+                        ))
+                    ).properties(height=350)
+                    
+                    # Al usar st.altair_chart sin la opción ".interactive()", el zoom queda desactivado automáticamente
+                    st.altair_chart(grafica, use_container_width=True)
                     
                     st.markdown("#### 💬 Historial de Comentarios")
-                    df_comments = df_checkins[['date', 'eva', 'borg', 'comment']].copy()
-                    df_comments = df_comments.rename(columns={'date': 'Fecha', 'eva': 'EVA', 'borg': 'Borg', 'comment': 'Comentario'})
+                    df_comments = df_checkins[['Fecha_Larga', 'eva', 'borg', 'comment']].copy()
+                    df_comments = df_comments.rename(columns={'Fecha_Larga': 'Fecha', 'eva': 'EVA', 'borg': 'Borg', 'comment': 'Comentario'})
                     st.dataframe(df_comments, use_container_width=True, hide_index=True)
 
     # -------------------------------------------------------------
