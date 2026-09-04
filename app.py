@@ -693,8 +693,8 @@ if st.session_state.admin_mode:
     # -------------------------------------------------------------
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
-        # Cambio en el orden de las pestañas
-        tab_ses_act, tab_crear_ses, tab_checkins = st.tabs(["⚙️ Sesiones Activas", "📝 Crear Nueva Sesión", "📊 Check-ins"])
+        # Añadimos la nueva pestaña de Seguimiento Pacientes
+        tab_ses_act, tab_crear_ses, tab_checkins, tab_seguimiento = st.tabs(["⚙️ Sesiones Activas", "📝 Crear Nueva Sesión", "📊 Check-ins", "📈 Seguimiento Pacientes"])
         
         with tab_ses_act:
             if st.session_state.get("editing_sesion_id"):
@@ -851,6 +851,49 @@ if st.session_state.admin_mode:
                                 st.markdown(f"**EVA:** {ch['eva']} / 10 | **Borg:** {ch['borg']} / 10")
                                 st.markdown(f"*{ch['comment']}*")
                                 st.divider()
+                                
+        with tab_seguimiento:
+            st.markdown("<h3 style='margin-top:10px;'>📈 Evolución Clínica del Paciente</h3>", unsafe_allow_html=True)
+            if not patients:
+                st.warning("Añade pacientes en el apartado 'Archivo' primero.")
+            else:
+                # Buscador con autocompletado nativo
+                paciente_sel_seg = st.selectbox(
+                    "🔍 Buscar Paciente:", 
+                    options=[p["id"] for p in patients], 
+                    format_func=get_patient_name, 
+                    key="search_pac_seg"
+                )
+                
+                # Filtrar sesiones y checkins del paciente
+                planes_paciente = [p["id"] for p in plans if str(p["patientId"]) == str(paciente_sel_seg)]
+                checkins_paciente = [c for c in checkins if str(c["planId"]) in planes_paciente]
+                
+                if not checkins_paciente:
+                    st.info("Este paciente aún no ha registrado ningún reporte en sus sesiones.")
+                else:
+                    # Preparar los datos con pandas
+                    df_checkins = pd.DataFrame(checkins_paciente)
+                    # Convertimos la fecha a objeto datetime para ordenar cronológicamente
+                    df_checkins['date_obj'] = pd.to_datetime(df_checkins['date'], format="%Y-%m-%d %H:%M", errors='coerce')
+                    df_checkins = df_checkins.sort_values(by='date_obj')
+                    
+                    # Asegurar que EVA y Borg sean números
+                    df_checkins['eva'] = pd.to_numeric(df_checkins['eva'], errors='coerce').fillna(0)
+                    df_checkins['borg'] = pd.to_numeric(df_checkins['borg'], errors='coerce').fillna(0)
+                    
+                    # Preparar dataframe para el gráfico
+                    df_chart = df_checkins.set_index('date')[['eva', 'borg']]
+                    df_chart = df_chart.rename(columns={'eva': 'Dolor (EVA)', 'borg': 'Fatiga (Borg)'})
+                    
+                    st.markdown("#### 📊 Gráfica de Dolor y Fatiga")
+                    # Color rojo para el dolor (EVA) y verde corporativo para la fatiga (Borg)
+                    st.line_chart(df_chart, color=["#aa3838", "#13765d"])
+                    
+                    st.markdown("#### 💬 Historial de Comentarios")
+                    df_comments = df_checkins[['date', 'eva', 'borg', 'comment']].copy()
+                    df_comments = df_comments.rename(columns={'date': 'Fecha', 'eva': 'EVA', 'borg': 'Borg', 'comment': 'Comentario'})
+                    st.dataframe(df_comments, use_container_width=True, hide_index=True)
 
     # -------------------------------------------------------------
     # VISTA 3: PROGRAMAS DE AF
