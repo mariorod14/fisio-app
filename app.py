@@ -3,7 +3,8 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
 import datetime
-import random
+import secrets
+import hmac
 import uuid
 import json
 
@@ -26,9 +27,14 @@ if 'gsheets_read_error' not in st.session_state:
 st.session_state.gsheets_read_error = False 
 
 # VARIABLES GLOBALES
-PASSWORD_FISIO = "FISIO123"
+# IMPORTANTE: configura FISIO_ADMIN_PIN en los secretos de Streamlit.
+# No guardes nunca la clave de administración en este archivo ni en GitHub.
 APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  
 CATEGORIAS_EJ = ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]
+ACCESS_CODE_LENGTH = 10
+ACCESS_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_MINUTES = 10
 
 # =============================================================
 # INYECCIÓN DE CSS
@@ -61,6 +67,16 @@ if 'editing_sesion_id' not in st.session_state:
     st.session_state.editing_sesion_id = None
 if 'editing_program_id' not in st.session_state:
     st.session_state.editing_program_id = None
+if 'failed_login_attempts' not in st.session_state:
+    st.session_state.failed_login_attempts = 0
+if 'login_locked_until' not in st.session_state:
+    st.session_state.login_locked_until = None
+if 'confirm_delete_patient_id' not in st.session_state:
+    st.session_state.confirm_delete_patient_id = None
+if 'confirm_delete_session_id' not in st.session_state:
+    st.session_state.confirm_delete_session_id = None
+if 'confirm_delete_program_id' not in st.session_state:
+    st.session_state.confirm_delete_program_id = None
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1aoQuXwdTdY-AdcI6zetr5p2BbgN5gwxhBXbVQLhU0GI/edit"
 
@@ -73,6 +89,63 @@ def clean_str(val):
     if s.endswith(".0"): s = s[:-2]
     if s.lower() == "nan": return ""
     return s
+
+def normalize_access_code(value):
+    """Permite que el paciente escriba el código con guiones o espacios."""
+    return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+def access_code_matches(attempt, stored_code):
+    normalized_attempt = normalize_access_code(attempt)
+    normalized_stored_code = normalize_access_code(stored_code)
+    return bool(normalized_attempt and normalized_stored_code) and hmac.compare_digest(normalized_attempt, normalized_stored_code)
+
+def get_admin_access_code():
+    """Lee el código profesional desde los secretos del despliegue, nunca desde Git."""
+    try:
+        return normalize_access_code(st.secrets["FISIO_ADMIN_PIN"])
+    except Exception:
+        return ""
+
+def get_existing_access_codes():
+    """Recoge tanto códigos nuevos como PINes numéricos ya existentes."""
+    used_codes = set()
+    for plan in plans:
+        code = normalize_access_code(plan.get("pin", ""))
+        if code:
+            used_codes.add(code)
+    for program in programs_af:
+        code = normalize_access_code(program.get("pin", ""))
+        if code:
+            used_codes.add(code)
+    return used_codes
+
+def generate_unique_access_code():
+    """Genera un código legible, difícil de adivinar y único entre todos los planes."""
+    used_codes = get_existing_access_codes()
+    for _ in range(100):
+        code = "".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(ACCESS_CODE_LENGTH))
+        if code not in used_codes:
+            return code
+    raise RuntimeError("No se pudo generar un código de acceso único. Inténtalo de nuevo.")
+
+def login_is_temporarily_locked():
+    locked_until = st.session_state.login_locked_until
+    if not locked_until:
+        return False
+    if datetime.datetime.now() >= locked_until:
+        st.session_state.failed_login_attempts = 0
+        st.session_state.login_locked_until = None
+        return False
+    return True
+
+def register_failed_login():
+    st.session_state.failed_login_attempts += 1
+    if st.session_state.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
+        st.session_state.login_locked_until = datetime.datetime.now() + datetime.timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+
+def reset_login_attempts():
+    st.session_state.failed_login_attempts = 0
+    st.session_state.login_locked_until = None
 
 def get_patients():
     try:
@@ -99,7 +172,8 @@ def save_patients(patients_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return
-    conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list))
+    patient_columns = ["id", "name", "phone", "anamnesis", "inspeccion", "movilidad", "fuerza"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list, columns=patient_columns))
     st.cache_data.clear()
 
 def get_exercises():
@@ -124,7 +198,8 @@ def save_exercises(exercises_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return
-    conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list))
+    exercise_columns = ["id", "name", "videoUrl", "category"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list, columns=exercise_columns))
     st.cache_data.clear()
 
 def get_plans():
@@ -151,7 +226,9 @@ def get_plans():
                 "title": clean_str(r.get("title", "")),
                 "exerciseIds": ex_ids, 
                 "exerciseInstructions": cleaned_insts,
-                "pin": clean_str(r.get("pin", ""))
+                "pin": clean_str(r.get("pin", "")),
+                # None identifica planes antiguos sin esta columna para migrarlos con seguridad.
+                "isActive": (clean_str(r.get("isActive", "")).lower() in ("true", "1", "si", "sí")) if clean_str(r.get("isActive", "")) else None
             })
         return plans
     except Exception:
@@ -168,9 +245,11 @@ def save_plans(plans_list):
             "id": p["id"], "patientId": p["patientId"], "title": p["title"],
             "exerciseIds": json.dumps(p["exerciseIds"]), 
             "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
-            "pin": p["pin"]
+            "pin": p["pin"],
+            "isActive": bool(p.get("isActive", True))
         })
-    conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted))
+    plan_columns = ["id", "patientId", "title", "exerciseIds", "exerciseInstructions", "pin", "isActive"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted, columns=plan_columns))
     st.cache_data.clear()
 
 def get_programs_af():
@@ -213,7 +292,8 @@ def save_programs_af(programs_list):
             "generalNote": p["generalNote"], "pin": p["pin"],
             "daysData": json.dumps(p["daysData"])
         })
-    conn.update(spreadsheet=SHEET_URL, worksheet="programas_af", data=pd.DataFrame(formatted))
+    program_columns = ["id", "patientId", "title", "frequency", "duration", "generalNote", "pin", "daysData"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="programas_af", data=pd.DataFrame(formatted, columns=program_columns))
     st.cache_data.clear()
 
 def get_checkins():
@@ -236,14 +316,22 @@ def get_checkins():
         st.session_state.gsheets_read_error = True
         return []
 
+def save_checkins(checkins_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
+        return False
+    checkin_columns = ["id", "planId", "date", "eva", "borg", "comment"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins_list, columns=checkin_columns))
+    st.cache_data.clear()
+    return True
+
 def save_checkin_item(plan_id, date, eva, borg, comment):
     if st.session_state.gsheets_read_error:
         st.error("❌ Error de conexión temporal. Inténtalo de nuevo en unos segundos.")
         return
     checkins_data = get_checkins()
-    checkins_data.append({"id": str(uuid.uuid4())[:4], "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
-    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins_data))
-    st.cache_data.clear()
+    checkins_data.append({"id": str(uuid.uuid4()), "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
+    save_checkins(checkins_data)
 
 # =============================================================
 # CARGA DE DATOS
@@ -253,6 +341,15 @@ exercises = get_exercises()
 plans = get_plans()
 programs_af = get_programs_af()
 checkins = get_checkins()
+
+# Migración compatible: para los planes antiguos sin columna isActive solo el más
+# reciente de cada paciente queda disponible en el portal. Se guarda al próximo cambio.
+latest_plan_index = {}
+for idx, plan in enumerate(plans):
+    latest_plan_index[plan["patientId"]] = idx
+for idx, plan in enumerate(plans):
+    if plan.get("isActive") is None:
+        plan["isActive"] = latest_plan_index.get(plan["patientId"]) == idx
 
 def get_patient_name(p_id):
     for p in patients:
@@ -546,7 +643,7 @@ if st.session_state.admin_mode:
                     if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                         if new_p_name:
                             patients.append({
-                                "id": str(uuid.uuid4())[:4], "name": new_p_name, "phone": new_p_phone,
+                                "id": str(uuid.uuid4()), "name": new_p_name, "phone": new_p_phone,
                                 "anamnesis": new_p_ana, "inspeccion": new_p_ins, "movilidad": new_p_mov, "fuerza": new_p_fue
                             })
                             save_patients(patients)
@@ -603,9 +700,28 @@ if st.session_state.admin_mode:
                         p["anamnesis"] = edit_ana; p["inspeccion"] = edit_ins
                         p["movilidad"] = edit_mov; p["fuerza"] = edit_fue
                         save_patients(patients); st.rerun()
-                    if c2.button("🗑️ Borrar Paciente", key=f"del_{p['id']}"):
-                        patients = [x for x in patients if str(x["id"]) != str(p["id"])]
-                        save_patients(patients); st.rerun()
+                    if st.session_state.confirm_delete_patient_id == p["id"]:
+                        st.warning("Vas a borrar definitivamente este paciente, todas sus sesiones, programas y reportes. Esta acción no se puede deshacer desde la aplicación.")
+                        confirm_col, cancel_col = st.columns(2)
+                        if confirm_col.button("Sí, borrar todos sus datos", key=f"confirm_del_patient_{p['id']}", type="primary", use_container_width=True):
+                            patient_id = str(p["id"])
+                            deleted_plan_ids = {str(pl["id"]) for pl in plans if str(pl["patientId"]) == patient_id}
+                            patients = [x for x in patients if str(x["id"]) != patient_id]
+                            plans = [pl for pl in plans if str(pl["patientId"]) != patient_id]
+                            programs_af = [pr for pr in programs_af if str(pr["patientId"]) != patient_id]
+                            checkins = [ch for ch in checkins if str(ch["planId"]) not in deleted_plan_ids]
+                            save_checkins(checkins)
+                            save_plans(plans)
+                            save_programs_af(programs_af)
+                            save_patients(patients)
+                            st.session_state.confirm_delete_patient_id = None
+                            st.rerun()
+                        if cancel_col.button("Cancelar", key=f"cancel_del_patient_{p['id']}", use_container_width=True):
+                            st.session_state.confirm_delete_patient_id = None
+                            st.rerun()
+                    elif c2.button("🗑️ Borrar Paciente", key=f"del_{p['id']}"):
+                        st.session_state.confirm_delete_patient_id = p["id"]
+                        st.rerun()
 
         with tab_ej:
             total_ej = len(exercises)
@@ -627,7 +743,7 @@ if st.session_state.admin_mode:
                 if btn_add:
                     if new_n.strip():
                         exercises.append({
-                            "id": str(uuid.uuid4())[:4],
+                            "id": str(uuid.uuid4()),
                             "name": new_n.strip(),
                             "videoUrl": new_u.strip(),
                             "category": new_c
@@ -679,15 +795,34 @@ if st.session_state.admin_mode:
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 if btn_save:
-                    lista_final = []
-                    for e in exercises:
-                        eid = e["id"]
-                        if eid not in ids_borrar:
-                            lista_final.append(nuevos_datos[eid])
+                    exercise_ids_to_delete = set(ids_borrar)
+                    references = []
+                    if exercise_ids_to_delete:
+                        for plan in plans:
+                            if any(str(eid) in exercise_ids_to_delete for eid in plan.get("exerciseIds", [])):
+                                references.append(f"Sesión: {plan['title']} ({get_patient_name(plan['patientId'])})")
+                        for program in programs_af:
+                            used_in_program = any(
+                                str(item.get("exerciseId", "")) in exercise_ids_to_delete
+                                for day in program.get("daysData", [])
+                                for block in day.get("blocks", [])
+                                for item in block.get("exercises", [])
+                            )
+                            if used_in_program:
+                                references.append(f"Programa AF: {program['title']} ({get_patient_name(program['patientId'])})")
+
+                    if references:
+                        st.error("No se han guardado los cambios porque uno o más ejercicios marcados para borrar siguen prescritos. Primero elimínalos de estos planes: " + "; ".join(references))
+                    else:
+                        lista_final = []
+                        for e in exercises:
+                            eid = e["id"]
+                            if eid not in exercise_ids_to_delete:
+                                lista_final.append(nuevos_datos[eid])
                         
-                    save_exercises(lista_final)
-                    st.success("¡Base de datos de ejercicios actualizada!")
-                    st.rerun()
+                        save_exercises(lista_final)
+                        st.success("¡Base de datos de ejercicios actualizada!")
+                        st.rerun()
 
     # -------------------------------------------------------------
     # VISTA 2: SESIONES CLÍNICAS
@@ -708,7 +843,9 @@ if st.session_state.admin_mode:
             search_query = st.text_input("🔍 Buscar sesión por título o nombre del paciente:")
             
             sesiones_actuales = {}
-            for pl in plans: sesiones_actuales[pl["patientId"]] = pl
+            for pl in plans:
+                if pl.get("isActive", True):
+                    sesiones_actuales[pl["patientId"]] = pl
             planes_filtrados = list(reversed(sesiones_actuales.values()))
             
             if search_query:
@@ -734,12 +871,26 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {pl['pin']}\n\n¡A por ello!"
+                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso es: {pl['pin']}\n\n¡A por ello!"
                                 st.code(mensaje_wa, language="markdown")
                         with c_del:
-                            if st.button("🗑️ Eliminar", key=f"del_{pl['id']}", use_container_width=True):
-                                plans = [x for x in plans if str(x["id"]) != str(pl["id"])]
-                                save_plans(plans); st.rerun()
+                            if st.session_state.confirm_delete_session_id == pl["id"]:
+                                st.warning("Se borrará la sesión y todos los reportes EVA/Borg asociados. El código de acceso dejará de funcionar.")
+                                confirm_col, cancel_col = st.columns(2)
+                                if confirm_col.button("Sí, borrar sesión", key=f"confirm_del_session_{pl['id']}", type="primary", use_container_width=True):
+                                    plan_id = str(pl["id"])
+                                    plans = [x for x in plans if str(x["id"]) != plan_id]
+                                    checkins = [ch for ch in checkins if str(ch["planId"]) != plan_id]
+                                    save_checkins(checkins)
+                                    save_plans(plans)
+                                    st.session_state.confirm_delete_session_id = None
+                                    st.rerun()
+                                if cancel_col.button("Cancelar", key=f"cancel_del_session_{pl['id']}", use_container_width=True):
+                                    st.session_state.confirm_delete_session_id = None
+                                    st.rerun()
+                            elif st.button("🗑️ Eliminar", key=f"del_{pl['id']}", use_container_width=True):
+                                st.session_state.confirm_delete_session_id = pl["id"]
+                                st.rerun()
 
         with tab_crear_ses:
             if not patients:
@@ -823,18 +974,22 @@ if st.session_state.admin_mode:
                     elif not st.session_state.orden_ejs:
                         st.warning("⚠️ Faltan campos por rellenar: Debes seleccionar al menos un ejercicio.")
                     else:
-                        nuevo_pin = str(random.randint(100000, 999999))
+                        nuevo_pin = generate_unique_access_code()
+                        # Un paciente solo puede tener una sesión clínica activa.
+                        for existing_plan in plans:
+                            if str(existing_plan["patientId"]) == str(paciente_sel):
+                                existing_plan["isActive"] = False
                         plans.append({
-                            "id": str(uuid.uuid4())[:4], "patientId": paciente_sel, "title": titulo_sesion,
+                            "id": str(uuid.uuid4()), "patientId": paciente_sel, "title": titulo_sesion,
                             "exerciseIds": st.session_state.orden_ejs, "exerciseInstructions": instrucciones_dict,
-                            "pin": nuevo_pin
+                            "pin": nuevo_pin, "isActive": True
                         })
                         save_plans(plans)
                         st.session_state.orden_ejs = []
                         st.success("¡Sesión guardada!")
                         
                         nombre_paciente = get_patient_name(paciente_sel)
-                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (PIN) es: {nuevo_pin}\n\n¡A por ello!"
+                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso es: {nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
 
@@ -961,12 +1116,22 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código PIN de acceso es: {pr['pin']}\n\n¡A entrenar!"
+                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso es: {pr['pin']}\n\n¡A entrenar!"
                                 st.code(mensaje_wa_gen, language="markdown")
                         with c_del:
-                            if st.button("🗑️ Eliminar", key=f"del_af_{pr['id']}", use_container_width=True):
-                                programs_af = [x for x in programs_af if str(x["id"]) != str(pr["id"])]
-                                save_programs_af(programs_af)
+                            if st.session_state.confirm_delete_program_id == pr["id"]:
+                                st.warning("Se borrará definitivamente este programa y su código de acceso dejará de funcionar.")
+                                confirm_col, cancel_col = st.columns(2)
+                                if confirm_col.button("Sí, borrar programa", key=f"confirm_del_program_{pr['id']}", type="primary", use_container_width=True):
+                                    programs_af = [x for x in programs_af if str(x["id"]) != str(pr["id"])]
+                                    save_programs_af(programs_af)
+                                    st.session_state.confirm_delete_program_id = None
+                                    st.rerun()
+                                if cancel_col.button("Cancelar", key=f"cancel_del_program_{pr['id']}", use_container_width=True):
+                                    st.session_state.confirm_delete_program_id = None
+                                    st.rerun()
+                            elif st.button("🗑️ Eliminar", key=f"del_af_{pr['id']}", use_container_width=True):
+                                st.session_state.confirm_delete_program_id = pr["id"]
                                 st.rerun()
 
         with tab_crear_af:
@@ -1125,14 +1290,14 @@ if st.session_state.admin_mode:
                         if faltan_titulos_dias:
                             st.warning("⚠️ Faltan campos por rellenar: Comprueba que todos los Días creados tengan un 'Título del Día'.")
                         else:
-                            nuevo_pin_af = str(random.randint(100000, 999999))
+                            nuevo_pin_af = generate_unique_access_code()
                             
                             # Concatenamos automáticamente el texto a los números introducidos
                             frecuencia_guardar = f"{af_frecuencia.strip()} días/semana" if af_frecuencia.strip() else ""
                             duracion_guardar = f"{af_duracion.strip()} minutos/día" if af_duracion.strip() else ""
                             
                             programs_af.append({
-                                "id": str(uuid.uuid4())[:4],
+                                "id": str(uuid.uuid4()),
                                 "patientId": af_paciente,
                                 "title": af_titulo,
                                 "frequency": frecuencia_guardar,
@@ -1146,7 +1311,7 @@ if st.session_state.admin_mode:
                             st.success("¡Programa de AF creado con éxito!")
                             
                             nombre_p = get_patient_name(af_paciente)
-                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu PIN de acceso es: {nuevo_pin_af}\n\n¡A por todas!"
+                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu código de acceso es: {nuevo_pin_af}\n\n¡A por todas!"
                             st.info("Copia el mensaje para mandarlo por WhatsApp:")
                             st.code(mensaje_wa_gen, language="markdown")
 
@@ -1155,32 +1320,49 @@ if st.session_state.admin_mode:
 # =============================================================
 else:
     if not st.session_state.logged_pin:
-        st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión o Programa</h1><p style='color:#64756e;'>Introduce tu código PIN de acceso</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión o Programa</h1><p style='color:#64756e;'>Introduce tu código de acceso</p></div>", unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             with st.form("login_form", clear_on_submit=False):
-                pin_input = st.text_input("PIN de acceso", type="password", label_visibility="hidden", placeholder="Ej: 785518")
+                pin_input = st.text_input("Código de acceso", type="password", label_visibility="hidden", placeholder="Ej: A7K9Q2M4NP")
                 btn_login = st.form_submit_button("🔑 Acceder a mi sesión", type="primary", use_container_width=True)
                 
-                if btn_login and pin_input:
-                    val_pin = pin_input.strip()
-                    if val_pin == PASSWORD_FISIO:
+                if login_is_temporarily_locked():
+                    remaining = st.session_state.login_locked_until - datetime.datetime.now()
+                    minutes = max(1, int(remaining.total_seconds() // 60) + 1)
+                    st.error(f"Por seguridad, espera aproximadamente {minutes} minuto(s) antes de volver a intentarlo.")
+                elif btn_login and pin_input:
+                    val_pin = normalize_access_code(pin_input)
+                    admin_access_code = get_admin_access_code()
+                    session_match = next((p for p in plans if p.get("isActive", True) and access_code_matches(val_pin, p.get("pin", ""))), None)
+                    program_match = next((pr for pr in programs_af if access_code_matches(val_pin, pr.get("pin", ""))), None)
+
+                    if admin_access_code and access_code_matches(val_pin, admin_access_code):
+                        reset_login_attempts()
                         st.session_state.admin_mode = True
                         st.rerun()
-                    else:
+                    elif session_match or program_match:
+                        reset_login_attempts()
                         st.session_state.logged_pin = val_pin
                         st.rerun()
+                    else:
+                        register_failed_login()
+                        remaining_attempts = max(0, MAX_LOGIN_ATTEMPTS - st.session_state.failed_login_attempts)
+                        if login_is_temporarily_locked():
+                            st.error("Demasiados intentos. El acceso se ha bloqueado temporalmente por seguridad.")
+                        else:
+                            st.error(f"Código incorrecto o no disponible. Te quedan {remaining_attempts} intento(s).")
 
     else:
         pin_ingresado = st.session_state.logged_pin
         
-        sesion_encontrada = next((p for p in plans if str(p["pin"]) == str(pin_ingresado)), None)
-        programa_af_encontrado = next((pr for pr in programs_af if str(pr["pin"]) == str(pin_ingresado)), None)
+        sesion_encontrada = next((p for p in plans if p.get("isActive", True) and access_code_matches(pin_ingresado, p.get("pin", ""))), None)
+        programa_af_encontrado = next((pr for pr in programs_af if access_code_matches(pin_ingresado, pr.get("pin", ""))), None)
         
         col_exit1, col_exit2 = st.columns([4, 1])
         with col_exit2:
-            if st.button("🚪 Cambiar PIN", key="exit_pin_btn"):
+            if st.button("🚪 Cambiar código", key="exit_pin_btn"):
                 st.session_state.logged_pin = None
                 st.rerun()
 
@@ -1232,7 +1414,7 @@ else:
                             st.markdown(card_af_html, unsafe_allow_html=True)
 
         elif sesion_encontrada:
-            sesiones_del_pac = [pl for pl in plans if str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
+            sesiones_del_pac = [pl for pl in plans if pl.get("isActive", True) and str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
             sesion_actual = sesiones_del_pac[-1] if sesiones_del_pac else None
             
             if sesion_actual and str(sesion_actual["id"]) != str(sesion_encontrada["id"]):
@@ -1251,8 +1433,7 @@ else:
                 
                 st.markdown("<h3 style='margin-bottom:20px; font-size:22px; color:#103d33 !important;'>🎥 Lista de Ejercicios</h3>", unsafe_allow_html=True)
                 
-                # RECORRIDO CON ENUMERATE PARA SACAR EL ÍNDICE (1, 2, 3...)
-                for idx, ex_id in enumerate(sesion_encontrada["exerciseIds"]):
+                for ex_id in sesion_encontrada["exerciseIds"]:
                     ex_data = get_exercise(ex_id)
                     inst_data = sesion_encontrada["exerciseInstructions"].get(ex_id, {})
                     
@@ -1264,15 +1445,14 @@ else:
                         vid_url = ex_data.get("videoUrl", "").strip()
                         btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>" if vid_url else ""
 
-                        # NUEVA ESTRUCTURA HTML SEGÚN TUS INDICACIONES
                         card_html = f"""
                         <div style='background:#fff; border:1px solid #dce7e2; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0px 4px 15px rgba(0,0,0,0.02);'>
-                            <div style='margin-bottom:15px;'>
-                                <h4 style='margin:0; font-size:18px; color:#103d33 !important;'>{idx + 1}. {ex_data['name']}</h4>
-                            </div>
                             <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #f0f4f2; padding-bottom:15px;'>
-                                <div>{btn_video_ses}</div>
-                                <div><span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span></div>
+                                <div>
+                                    <h4 style='margin:0 0 5px 0; font-size:18px; color:#103d33 !important;'>{ex_data['name']}</h4>
+                                    <span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span>
+                                </div>
+                                {btn_video_ses}
                             </div>
                             <div style='display:flex; gap:20px;'>
                                 <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
