@@ -541,9 +541,9 @@ if st.session_state.admin_mode:
                         if prio_key not in st.session_state:
                             st.session_state[prio_key] = def_prio
                             
-                        ce1, ce2, ce3, ce4, ce5, ce6, ce7 = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
+                        ce1, ce2, ce3, ce4, ce5, ce6, ce7 = st.columns([2.8, 0.9, 0.9, 1.8, 2.0, 0.6, 0.6])
                         with ce1:
-                            st.markdown(f"<div style='margin-top:6px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='margin-top:6px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{ename}</div>", unsafe_allow_html=True)
                         with ce2:
                             s = st.text_input("S", value=def_s, key=f"es_af_{pr_id}_{d_idx}_{b_idx}_{eid}", placeholder="Ser", label_visibility="collapsed")
                         with ce3:
@@ -551,7 +551,7 @@ if st.session_state.admin_mode:
                         with ce4:
                             n = st.text_input("N", value=def_n, key=f"en_af_{pr_id}_{d_idx}_{b_idx}_{eid}", placeholder="Nota", label_visibility="collapsed")
                         with ce5:
-                            es_prio = st.checkbox("⭐ Prio", key=prio_key)
+                            es_prio = st.checkbox("⭐ Prioritario", key=prio_key)
                         with ce6:
                             if st.button("⬆️", key=f"eup_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
                                 st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1]
@@ -970,7 +970,7 @@ if st.session_state.admin_mode:
                         with col_dn:
                             if st.button("⬇️", key=f"dn_{e_id}"):
                                 if idx < len(st.session_state.orden_ejs) - 1:
-                                    st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx], st.session_state.orden_ejs[idx+1]
+                                    st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx]
                                     st.rerun()
                         
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
@@ -1240,11 +1240,10 @@ if st.session_state.admin_mode:
                                         falta_algun_video_af = True
                                         ename += " ⚠️ (SIN VÍDEO)"
                                     
-                                    # Ajuste para añadir campos de Series y Reps en la misma línea
-                                    col_e_name, col_s, col_r, col_n, col_e_prio, col_e_up, col_e_dn = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
+                                    col_e_name, col_s, col_r, col_n, col_e_prio, col_e_up, col_e_dn = st.columns([2.8, 0.9, 0.9, 1.8, 2.0, 0.6, 0.6])
                                     with col_e_name:
                                         color_t = "#aa3838" if sin_video_af else "inherit"
-                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_t}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_t}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{ename}</div>", unsafe_allow_html=True)
                                     with col_s:
                                         s = st.text_input("S", key=f"saf_{d_idx}_{b_idx}_{eid}", placeholder="Ser", label_visibility="collapsed")
                                     with col_r:
@@ -1255,7 +1254,7 @@ if st.session_state.admin_mode:
                                         prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
                                         if prio_key not in st.session_state:
                                             st.session_state[prio_key] = st.session_state.prio_dict.get(prio_key, False)
-                                        es_prio = st.checkbox("⭐ Prio", key=prio_key, on_change=_save_prio, args=(prio_key,))
+                                        es_prio = st.checkbox("⭐ Prioritario", key=prio_key, on_change=_save_prio, args=(prio_key,))
                                     with col_e_up:
                                         if st.button("⬆️", key=f"up_{d_idx}_{b_idx}_{eid}"):
                                             if idx_e > 0:
@@ -1402,14 +1401,14 @@ else:
                     
                     st.markdown(html_titulo, unsafe_allow_html=True)
                     
-                    for idx, item in enumerate(block['exercises'], start=1):
+                    for item in block['exercises']:
                         ex_data = get_exercise(item['exerciseId'])
                         if ex_data:
                             series = item.get("series", "-")
                             reps = item.get("reps", "-")
                             notes = item.get("notes", "")
                             
-                            prio_badge = "<span style='background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold; margin-left:6px;'>⭐ Prio</span>" if item.get('isPriority') else ""
+                            prio_badge = "<span style='background:#ffeb3b; padding:2px 6px; border-radius:4px; margin-right:8px;'>⭐</span>" if item.get('isPriority') else ""
                             notas_str = f" 📝 {notes}" if notes else ""
                             
                             vid_url = ex_data.get('videoUrl', '').strip()
@@ -1418,7 +1417,7 @@ else:
                             card_af_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
-                                    <strong>{idx}.</strong> {ex_data['name']} 🔄 {series}x{reps}{notas_str} {prio_badge}
+                                    {prio_badge}{ex_data['name']} 🔄 {series}x{reps}{notas_str}
                                 </div>
                                 {btn_video}
                             </div>
@@ -1494,7 +1493,6 @@ else:
                             vid_url = ex_data.get("videoUrl", "").strip()
                             btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
     
-                            # Reemplazamos la tarjeta grande por el diseño condensado estilo Insignia en línea
                             card_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
