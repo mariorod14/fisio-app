@@ -1409,7 +1409,7 @@ else:
                             reps = item.get("reps", "-")
                             notes = item.get("notes", "")
                             
-                            prio_badge = " ⭐" if item.get('isPriority') else ""
+                            prio_badge = "⭐ " if item.get('isPriority') else ""
                             notas_str = f" 📝 {notes}" if notes else ""
                             
                             vid_url = ex_data.get('videoUrl', '').strip()
@@ -1418,7 +1418,7 @@ else:
                             card_af_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
-                                    <strong>{idx}.</strong> {ex_data['name']} 🔄 {series}x{reps}{notas_str} {prio_badge}
+                                    {prio_badge}{ex_data['name']} 🔄 {series}x{reps}{notas_str}
                                 </div>
                                 {btn_video}
                             </div>
