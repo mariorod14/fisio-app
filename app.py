@@ -27,8 +27,6 @@ if 'gsheets_read_error' not in st.session_state:
 st.session_state.gsheets_read_error = False 
 
 # VARIABLES GLOBALES
-# IMPORTANTE: configura FISIO_ADMIN_PIN en los secretos de Streamlit.
-# No guardes nunca la clave de administración en este archivo ni en GitHub.
 APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  
 CATEGORIAS_EJ = ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]
 ACCESS_CODE_LENGTH = 10
@@ -91,7 +89,6 @@ def clean_str(val):
     return s
 
 def normalize_access_code(value):
-    """Permite que el paciente escriba el código con guiones o espacios."""
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
 def access_code_matches(attempt, stored_code):
@@ -100,14 +97,12 @@ def access_code_matches(attempt, stored_code):
     return bool(normalized_attempt and normalized_stored_code) and hmac.compare_digest(normalized_attempt, normalized_stored_code)
 
 def get_admin_access_code():
-    """Lee el código profesional desde los secretos del despliegue, nunca desde Git."""
     try:
         return normalize_access_code(st.secrets["FISIO_ADMIN_PIN"])
     except Exception:
         return ""
 
 def get_existing_access_codes():
-    """Recoge tanto códigos nuevos como PINes numéricos ya existentes."""
     used_codes = set()
     for plan in plans:
         code = normalize_access_code(plan.get("pin", ""))
@@ -120,7 +115,6 @@ def get_existing_access_codes():
     return used_codes
 
 def generate_unique_access_code():
-    """Genera un código legible, difícil de adivinar y único entre todos los planes."""
     used_codes = get_existing_access_codes()
     for _ in range(100):
         code = "".join(secrets.choice(ACCESS_CODE_ALPHABET) for _ in range(ACCESS_CODE_LENGTH))
@@ -229,7 +223,6 @@ def get_plans():
                 "exerciseInstructions": cleaned_insts,
                 "pin": clean_str(r.get("pin", "")),
                 "startDate": clean_str(r.get("startDate", "")),
-                # None identifica planes antiguos sin esta columna para migrarlos con seguridad.
                 "isActive": (clean_str(r.get("isActive", "")).lower() in ("true", "1", "si", "sí")) if clean_str(r.get("isActive", "")) else None
             })
         return plans
@@ -347,8 +340,6 @@ plans = get_plans()
 programs_af = get_programs_af()
 checkins = get_checkins()
 
-# Migración compatible: para los planes antiguos sin columna isActive solo el más
-# reciente de cada paciente queda disponible en el portal. Se guarda al próximo cambio.
 latest_plan_index = {}
 for idx, plan in enumerate(plans):
     latest_plan_index[plan["patientId"]] = idx
@@ -371,7 +362,6 @@ def get_exercise(e_id):
 # =============================================================
 if st.session_state.admin_mode:
 
-    # --- VENTANAS EMERGENTES (MODALES) DE EDICIÓN ---
     @st.dialog("✏️ Editar Sesión Clínica", width="large")
     def modal_editar_sesion(pl):
         pl_id = pl["id"]
@@ -535,27 +525,43 @@ if st.session_state.admin_mode:
                         ename = get_exercise(eid)['name'] if get_exercise(eid) else "Ejercicio"
                         
                         def_prio = False
+                        def_s = ""
+                        def_r = ""
+                        def_n = ""
                         if old_block:
                             for ex_old in old_block.get("exercises", []):
                                 if ex_old.get("exerciseId") == eid:
                                     def_prio = ex_old.get("isPriority", False)
+                                    def_s = ex_old.get("series", "")
+                                    def_r = ex_old.get("reps", "")
+                                    def_n = ex_old.get("notes", "")
                                     break
                                     
                         prio_key = f"eprio_{pr_id}_{d_idx}_{b_idx}_{eid}"
                         if prio_key not in st.session_state:
                             st.session_state[prio_key] = def_prio
                             
-                        ce1, ce2, ce3, ce4 = st.columns([4, 2, 0.6, 0.6])
-                        ce1.markdown(f"<div style='margin-top:6px; font-weight:bold;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
-                        es_prio = ce2.checkbox("⭐ Prioritario", key=prio_key)
-                        if ce3.button("⬆️", key=f"eup_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
-                            st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1]
-                            st.rerun()
-                        if ce4.button("⬇️", key=f"edn_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e < len(st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"])-1:
-                            st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1]
-                            st.rerun()
+                        ce1, ce2, ce3, ce4, ce5, ce6, ce7 = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
+                        with ce1:
+                            st.markdown(f"<div style='margin-top:6px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
+                        with ce2:
+                            s = st.text_input("S", value=def_s, key=f"es_af_{pr_id}_{d_idx}_{b_idx}_{eid}", placeholder="Ser", label_visibility="collapsed")
+                        with ce3:
+                            r = st.text_input("R", value=def_r, key=f"er_af_{pr_id}_{d_idx}_{b_idx}_{eid}", placeholder="Rep", label_visibility="collapsed")
+                        with ce4:
+                            n = st.text_input("N", value=def_n, key=f"en_af_{pr_id}_{d_idx}_{b_idx}_{eid}", placeholder="Nota", label_visibility="collapsed")
+                        with ce5:
+                            es_prio = st.checkbox("⭐ Prio", key=prio_key)
+                        with ce6:
+                            if st.button("⬆️", key=f"eup_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
+                                st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e-1]
+                                st.rerun()
+                        with ce7:
+                            if st.button("⬇️", key=f"edn_{pr_id}_{d_idx}_{b_idx}_{eid}") and idx_e < len(st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"])-1:
+                                st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e], st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"][idx_e+1]
+                                st.rerun()
                             
-                        ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio})
+                        ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio, "series": s, "reps": r, "notes": n})
                         
                     bloques_dia.append({
                         "blockTitle": f"{b_cat} {b_regla}".strip(),
@@ -583,7 +589,6 @@ if st.session_state.admin_mode:
         if c_cancel.button("❌ Cancelar", use_container_width=True):
             st.session_state.editing_program_id = None
             st.rerun()
-    # --- FIN DE VENTANAS EMERGENTES ---
 
     st.sidebar.markdown("<h2 style='color:#13765d !important;'>🩺 FisioSesión</h2>", unsafe_allow_html=True)
     
@@ -598,9 +603,6 @@ if st.session_state.admin_mode:
         st.session_state.logged_pin = None
         st.rerun()
 
-    # -------------------------------------------------------------
-    # BOTÓN DE COPIA DE SEGURIDAD LOCAL
-    # -------------------------------------------------------------
     st.sidebar.divider()
     
     backup_data = {
@@ -622,13 +624,9 @@ if st.session_state.admin_mode:
     )
     st.sidebar.caption("Pulsa aquí regularmente para guardar una copia de todos tus pacientes y ejercicios en tu ordenador.")
 
-    # AVISO DE ERROR DE CONEXIÓN
     if st.session_state.gsheets_read_error:
         st.error("⚠️ Atención: Ha habido un fallo de conexión con Google Sheets. Las funciones de guardado y borrado están bloqueadas temporalmente para proteger tus datos. Recarga la página en unos segundos.")
 
-    # -------------------------------------------------------------
-    # VISTA 1: ARCHIVO
-    # -------------------------------------------------------------
     if menu_seleccion == "📁 Archivo":
         st.markdown("<h1>📁 Base de Datos y Archivo</h1>", unsafe_allow_html=True)
         tab_pac, tab_ej = st.tabs(["👥 Pacientes", "🎥 Ejercicios"])
@@ -839,12 +837,8 @@ if st.session_state.admin_mode:
                         st.success("¡Base de datos de ejercicios actualizada!")
                         st.rerun()
 
-    # -------------------------------------------------------------
-    # VISTA 2: SESIONES CLÍNICAS
-    # -------------------------------------------------------------
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
-        # Añadimos la nueva pestaña de Seguimiento Pacientes
         tab_ses_act, tab_crear_ses, tab_checkins, tab_seguimiento = st.tabs(["⚙️ Sesiones Activas", "📝 Crear Nueva Sesión", "📊 Check-ins", "📈 Seguimiento Pacientes"])
         
         with tab_ses_act:
@@ -992,7 +986,6 @@ if st.session_state.admin_mode:
                         st.warning("⚠️ Faltan campos por rellenar: Debes seleccionar al menos un ejercicio.")
                     else:
                         nuevo_pin = generate_unique_access_code()
-                        # Un paciente solo puede tener una sesión clínica activa.
                         for existing_plan in plans:
                             if str(existing_plan["patientId"]) == str(paciente_sel):
                                 existing_plan["isActive"] = False
@@ -1030,7 +1023,6 @@ if st.session_state.admin_mode:
             if not patients:
                 st.warning("Añade pacientes en el apartado 'Archivo' primero.")
             else:
-                # Buscador con autocompletado nativo
                 paciente_sel_seg = st.selectbox(
                     "🔍 Buscar Paciente:", 
                     options=[p["id"] for p in patients], 
@@ -1038,37 +1030,28 @@ if st.session_state.admin_mode:
                     key="search_pac_seg"
                 )
                 
-                # Filtrar sesiones y checkins del paciente
                 planes_paciente = [p["id"] for p in plans if str(p["patientId"]) == str(paciente_sel_seg)]
                 checkins_paciente = [c for c in checkins if str(c["planId"]) in planes_paciente]
                 
                 if not checkins_paciente:
                     st.info("Este paciente aún no ha registrado ningún reporte en sus sesiones.")
                 else:
-                    # Preparar los datos con pandas
                     df_checkins = pd.DataFrame(checkins_paciente)
                     df_checkins['date_obj'] = pd.to_datetime(df_checkins['date'], format="%Y-%m-%d %H:%M", errors='coerce')
                     df_checkins = df_checkins.sort_values(by='date_obj')
                     
-                    # Asegurar que EVA y Borg sean números
                     df_checkins['eva'] = pd.to_numeric(df_checkins['eva'], errors='coerce').fillna(0)
                     df_checkins['borg'] = pd.to_numeric(df_checkins['borg'], errors='coerce').fillna(0)
                     
-                    # --- NUEVOS FORMATOS DE FECHA ---
-                    # Para la gráfica (Solo día/mes/año)
                     df_checkins['Fecha_Corta'] = df_checkins['date_obj'].dt.strftime('%d/%m/%Y')
-                    # Para la tabla de comentarios (Día/mes/año Hora:Minuto)
                     df_checkins['Fecha_Larga'] = df_checkins['date_obj'].dt.strftime('%d/%m/%Y %H:%M')
                     
                     st.markdown("#### 📊 Gráfica de Dolor y Fatiga")
                     
-                    # Preparar dataframe estructurado para Altair
                     df_melted = df_checkins[['Fecha_Corta', 'eva', 'borg']].copy()
                     df_melted = df_melted.rename(columns={'eva': 'Dolor (EVA)', 'borg': 'Fatiga (Borg)'})
-                    # "Derretir" los datos para que Altair entienda las dos líneas
                     df_melted = df_melted.melt('Fecha_Corta', var_name='Métrica', value_name='Puntuación')
                     
-                    # --- CREACIÓN DE LA GRÁFICA FIJA ---
                     grafica = alt.Chart(df_melted).mark_line(point=True).encode(
                         x=alt.X('Fecha_Corta:N', title='Fecha', sort=None, axis=alt.Axis(labelAngle=0)),
                         y=alt.Y('Puntuación:Q', scale=alt.Scale(domain=[0, 10]), title='Escala (0-10)'),
@@ -1078,7 +1061,6 @@ if st.session_state.admin_mode:
                         ))
                     ).properties(height=350)
                     
-                    # Al usar st.altair_chart sin la opción ".interactive()", el zoom queda desactivado automáticamente
                     st.altair_chart(grafica, use_container_width=True)
                     
                     st.markdown("#### 💬 Historial de Comentarios")
@@ -1086,9 +1068,6 @@ if st.session_state.admin_mode:
                     df_comments = df_comments.rename(columns={'Fecha_Larga': 'Fecha', 'eva': 'EVA', 'borg': 'Borg', 'comment': 'Comentario'})
                     st.dataframe(df_comments, use_container_width=True, hide_index=True)
 
-    # -------------------------------------------------------------
-    # VISTA 3: PROGRAMAS DE AF
-    # -------------------------------------------------------------
     elif menu_seleccion == "🏋️ Programas de AF":
         st.markdown("<h1>🏋️ Programas de Actividad Física</h1>", unsafe_allow_html=True)
         tab_gest_af, tab_crear_af = tabs = st.tabs(["⚙️ Programas Activos", "📝 Crear Nuevo Programa AF"])
@@ -1170,7 +1149,6 @@ if st.session_state.admin_mode:
                 af_paciente = col_p.selectbox("1. Paciente:", options=[p["id"] for p in patients], format_func=get_patient_name, key="af_pac")
                 af_titulo = col_t.text_input("2. Título del programa:", placeholder="Ej: Trabajo de fuerza ANA")
                 
-                # Configuración de Frecuencia y Duración con formato automático (Diseño optimizado)
                 col_f, col_d = st.columns(2)
                 
                 c_f1, c_f2 = col_f.columns([0.75, 0.25])
@@ -1251,7 +1229,7 @@ if st.session_state.admin_mode:
 
                             ejs_bloque_info = []
                             if st.session_state[key_order_af]:
-                                st.caption("Ordena los ejercicios con las flechas ⬆️/⬇️ y marca si son ⭐ Prioritarios:")
+                                st.caption("Ordena y configura los ejercicios con sus series y repeticiones:")
                                 for idx_e, eid in enumerate(st.session_state[key_order_af]):
                                     ej_obj = get_exercise(eid)
                                     ename = ej_obj['name'] if ej_obj else "Ejercicio"
@@ -1262,16 +1240,22 @@ if st.session_state.admin_mode:
                                         falta_algun_video_af = True
                                         ename += " ⚠️ (SIN VÍDEO)"
                                     
-                                    col_e_name, col_e_prio, col_e_up, col_e_dn = st.columns([4, 2, 0.6, 0.6])
+                                    # Ajuste para añadir campos de Series y Reps en la misma línea
+                                    col_e_name, col_s, col_r, col_n, col_e_prio, col_e_up, col_e_dn = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
                                     with col_e_name:
                                         color_t = "#aa3838" if sin_video_af else "inherit"
-                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_t};'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_t}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e + 1}. {ename}</div>", unsafe_allow_html=True)
+                                    with col_s:
+                                        s = st.text_input("S", key=f"saf_{d_idx}_{b_idx}_{eid}", placeholder="Ser", label_visibility="collapsed")
+                                    with col_r:
+                                        r = st.text_input("R", key=f"raf_{d_idx}_{b_idx}_{eid}", placeholder="Rep", label_visibility="collapsed")
+                                    with col_n:
+                                        n = st.text_input("N", key=f"naf_{d_idx}_{b_idx}_{eid}", placeholder="Nota", label_visibility="collapsed")
                                     with col_e_prio:
                                         prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
                                         if prio_key not in st.session_state:
                                             st.session_state[prio_key] = st.session_state.prio_dict.get(prio_key, False)
-                                            
-                                        es_prio = st.checkbox("⭐ Prioritario", key=prio_key, on_change=_save_prio, args=(prio_key,))
+                                        es_prio = st.checkbox("⭐ Prio", key=prio_key, on_change=_save_prio, args=(prio_key,))
                                     with col_e_up:
                                         if st.button("⬆️", key=f"up_{d_idx}_{b_idx}_{eid}"):
                                             if idx_e > 0:
@@ -1283,7 +1267,7 @@ if st.session_state.admin_mode:
                                                 st.session_state[key_order_af][idx_e+1], st.session_state[key_order_af][idx_e] = st.session_state[key_order_af][idx_e+1], st.session_state[key_order_af][idx_e]
                                                 st.rerun()
 
-                                    ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio})
+                                    ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio, "series": s, "reps": r, "notes": n})
 
                             bloques_dia.append({
                                 "blockTitle": b_nombre_completo,
@@ -1311,8 +1295,6 @@ if st.session_state.admin_mode:
                             st.warning("⚠️ Faltan campos por rellenar: Comprueba que todos los Días creados tengan un 'Título del Día'.")
                         else:
                             nuevo_pin_af = generate_unique_access_code()
-                            
-                            # Concatenamos automáticamente el texto a los números introducidos
                             frecuencia_guardar = f"{af_frecuencia.strip()} días/semana" if af_frecuencia.strip() else ""
                             duracion_guardar = f"{af_duracion.strip()} minutos/día" if af_duracion.strip() else ""
                             
@@ -1393,6 +1375,7 @@ else:
             <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin: 10px 0px 25px 0px; text-align:center;'>
                 <span style='color:#13765d; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1px;'>PROGRAMA DE ENTRENAMIENTO</span>
                 <h2 style='color:#103d33 !important; font-size:28px; font-weight:800; margin:10px 0px 5px 0px;'>{pr['title']}</h2>
+                <p style='color:#64756e; font-size:14px; margin-top:5px; margin-bottom:5px;'><strong>Fecha:</strong> {pr.get('startDate', 'No registrada')}</p>
                 <p style='color:#64756e; font-size:14px; margin:0;'>⏱️ {pr['frequency']} | {pr['duration']}</p>
             </div>
             """
@@ -1419,18 +1402,27 @@ else:
                     
                     st.markdown(html_titulo, unsafe_allow_html=True)
                     
-                    for item in block['exercises']:
+                    for idx, item in enumerate(block['exercises'], start=1):
                         ex_data = get_exercise(item['exerciseId'])
                         if ex_data:
-                            prio_badge = "<span style='background:#fff3cd; color:#856404; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold; margin-left:8px;'>⭐ Prioritario</span>" if item.get('isPriority') else ""
+                            series = item.get("series", "-")
+                            reps = item.get("reps", "-")
+                            notes = item.get("notes", "")
+                            
+                            prio_badge = "<span style='background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold; margin-left:6px;'>⭐ Prio</span>" if item.get('isPriority') else ""
+                            notas_str = f" 📝 {notes}" if notes else ""
                             
                             vid_url = ex_data.get('videoUrl', '').strip()
-                            if vid_url:
-                                btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:8px 14px; border-radius:7px; font-weight:bold; font-size:13px;'>▶ Ver Vídeo</a>"
-                            else:
-                                btn_video = ""
+                            btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
                                 
-                            card_af_html = f"<div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;'><div><span style='font-size:16px; font-weight:600; color:#103d33;'>{ex_data['name']}</span>{prio_badge}</div>{btn_video}</div>"
+                            card_af_html = f"""
+                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
+                                <div style='font-size:15px; color:#103d33;'>
+                                    <strong>{idx}.</strong> {ex_data['name']} 🔄 {series}x{reps}{notas_str} {prio_badge}
+                                </div>
+                                {btn_video}
+                            </div>
+                            """
                             
                             st.markdown(card_af_html, unsafe_allow_html=True)
 
@@ -1478,6 +1470,7 @@ else:
                     <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin: 10px 0px 35px 0px; text-align:center;'>
                         <span style='color:#13765d; font-size:14px; font-weight:600; text-transform:uppercase; letter-spacing:1px;'>TU SESIÓN DE HOY</span>
                         <h2 style='color:#103d33 !important; font-size:32px; font-weight:800; margin:10px 0px 5px 0px; line-height:1.2;'>{sesion_encontrada['title']}</h2>
+                        <p style='color:#64756e; font-size:14px; margin-top:5px; margin-bottom:0px;'><strong>Fecha:</strong> {sesion_encontrada.get('startDate', 'No registrada')}</p>
                     </div>
                     """
                     st.markdown(banner_html, unsafe_allow_html=True)
@@ -1487,7 +1480,7 @@ else:
                     
                     st.markdown("<h3 style='margin-bottom:20px; font-size:22px; color:#103d33 !important;'>🎥 Lista de Ejercicios</h3>", unsafe_allow_html=True)
                     
-                    for ex_id in sesion_encontrada["exerciseIds"]:
+                    for idx, ex_id in enumerate(sesion_encontrada["exerciseIds"], start=1):
                         ex_data = get_exercise(ex_id)
                         inst_data = sesion_encontrada["exerciseInstructions"].get(ex_id, {})
                         
@@ -1496,33 +1489,20 @@ else:
                             reps = inst_data.get("reps", "-")
                             notes = inst_data.get("notes", "")
                             
-                            vid_url = ex_data.get("videoUrl", "").strip()
-                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold; font-size:14px; text-align:center;'>▶ Ver Vídeo</a>" if vid_url else ""
-    
-                            card_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:12px; padding:20px; margin-bottom:15px; box-shadow:0px 4px 15px rgba(0,0,0,0.02);'>
-                                <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #f0f4f2; padding-bottom:15px;'>
-                                    <div>
-                                        <h4 style='margin:0 0 5px 0; font-size:18px; color:#103d33 !important;'>{ex_data['name']}</h4>
-                                        <span style='background:#e9f6f0; color:#13765d; padding:4px 8px; border-radius:5px; font-size:12px; font-weight:600;'>{ex_data['category']}</span>
-                                    </div>
-                                    {btn_video_ses}
-                                </div>
-                                <div style='display:flex; gap:20px;'>
-                                    <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
-                                        <span style='color:#64756e; font-size:12px; text-transform:uppercase;'>Series</span><br>
-                                        <span style='font-size:18px; font-weight:bold; color:#103d33;'>{series}</span>
-                                    </div>
-                                    <div style='background:#f6f8f6; padding:10px 15px; border-radius:8px; flex:1;'>
-                                        <span style='color:#64756e; font-size:12px; text-transform:uppercase;'>Repeticiones</span><br>
-                                        <span style='font-size:18px; font-weight:bold; color:#103d33;'>{reps}</span>
-                                    </div>
-                                </div>
-                            """
-                            if notes:
-                                card_html += f"<div style='margin-top:15px; background:#fff8e1; border-left:4px solid #fbc02d; padding:10px; border-radius:0 8px 8px 0; color:#103d33; font-size:14px;'>💡 {notes}</div>"
-                            card_html += "</div>"
+                            notas_str = f" 📝 {notes}" if notes else ""
                             
+                            vid_url = ex_data.get("videoUrl", "").strip()
+                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
+    
+                            # Reemplazamos la tarjeta grande por el diseño condensado estilo Insignia en línea
+                            card_html = f"""
+                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
+                                <div style='font-size:15px; color:#103d33;'>
+                                    <strong>{idx}.</strong> {ex_data['name']} 🔄 {series}x{reps}{notas_str}
+                                </div>
+                                {btn_video_ses}
+                            </div>
+                            """
                             st.markdown(card_html, unsafe_allow_html=True)
                     
                     st.divider()
