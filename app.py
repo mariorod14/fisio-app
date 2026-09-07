@@ -1466,9 +1466,11 @@ else:
                     st.markdown("</div>", unsafe_allow_html=True)
                 
                 else:
+                    nombre_paciente_ses = paciente_obj.get('name', '').strip() if paciente_obj else ''
+                    saludo_ses = f"Esta es tu sesión de hoy, {nombre_paciente_ses}" if nombre_paciente_ses else "Esta es tu sesión de hoy"
                     banner_html = f"""
                     <div style='background:#e9f6f0; border: 1px solid #dce7e2; border-radius:16px; padding:25px; margin: 10px 0px 35px 0px; text-align:center;'>
-                        <span style='color:#13765d; font-size:14px; font-weight:600; text-transform:uppercase; letter-spacing:1px;'>TU SESIÓN DE HOY</span>
+                        <span style='color:#13765d; font-size:14px; font-weight:600; text-transform:uppercase; letter-spacing:1px;'>{saludo_ses}</span>
                         <h2 style='color:#103d33 !important; font-size:32px; font-weight:800; margin:10px 0px 5px 0px; line-height:1.2;'>{sesion_encontrada['title']}</h2>
                     </div>
                     """
@@ -1489,9 +1491,27 @@ else:
                             notes = inst_data.get("notes", "")
                             
                             vid_url = ex_data.get("videoUrl", "").strip()
-                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
+                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:14px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
 
-                            notas_html = f"<div style='margin-top:8px; font-size:13px; color:#64756e;'>📝 {notes}</div>" if notes else ""
+                            box_series_reps = f"""
+                            <div style='display:flex; gap:10px; margin-top:10px;'>
+                                <div style='flex:1; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 10px; text-align:center;'>
+                                    <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Series</div>
+                                    <div style='font-size:18px; color:#103d33; font-weight:800; margin-top:2px;'>{series}</div>
+                                </div>
+                                <div style='flex:1; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 10px; text-align:center;'>
+                                    <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Repeticiones</div>
+                                    <div style='font-size:18px; color:#103d33; font-weight:800; margin-top:2px;'>{reps}</div>
+                                </div>
+                            </div>
+                            """
+
+                            notas_html = f"""
+                            <div style='display:flex; align-items:center; gap:12px; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 12px; margin-top:8px;'>
+                                <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; white-space:nowrap;'>Notas</div>
+                                <div style='font-size:14px; color:#103d33; flex:1;'>{notes}</div>
+                            </div>
+                            """ if notes else ""
 
                             card_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:12px 14px; margin-bottom:10px;'>
@@ -1501,16 +1521,14 @@ else:
                                     </div>
                                     {btn_video_ses}
                                 </div>
-                                <div style='background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:6px 10px; margin-top:10px; font-size:14px; color:#103d33; font-weight:600; display:inline-block;'>
-                                    🔄 {series} x {reps}
-                                </div>
+                                {box_series_reps}
                                 {notas_html}
                             </div>
                             """
                             st.markdown(card_html, unsafe_allow_html=True)
                     
                     st.divider()
-                    st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Terminar Sesión</h3>", unsafe_allow_html=True)
+                    st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Sesión Terminada</h3>", unsafe_allow_html=True)
                     st.write("¿Cómo ha ido? Por favor, reporta la intensidad para tu fisioterapeuta.")
                     with st.form(f"checkin_form_{sesion_encontrada['id']}"):
                         eva = st.slider("Dolor (EVA): 0 (Nada) a 10 (Máximo)", 0, 10, 0)
