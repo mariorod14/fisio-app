@@ -1449,21 +1449,26 @@ else:
                 ack_key = f"ack_rev_{sesion_encontrada['id']}"
                 
                 if show_warning and not st.session_state.get(ack_key, False):
-                    st.markdown("<div style='background:#fff8e1; border: 2px solid #fbc02d; border-radius:12px; padding:30px; text-align:center; margin-top:20px;'>", unsafe_allow_html=True)
-                    st.markdown("<h2 style='color:#f57f17 !important;'>⚠️ Recordatorio de Revisión</h2>", unsafe_allow_html=True)
-                    
+                    fecha_rev_str = r_date.strftime("%d/%m/%Y")
                     if days_left > 0:
-                        st.markdown(f"<p style='font-size:18px; color:#103d33;'>Quedan <strong>{days_left} días</strong> para tu próxima revisión clínica.</p>", unsafe_allow_html=True)
+                        texto_revision = f"Tu próxima revisión es en {days_left} días, el {fecha_rev_str}."
                     elif days_left == 0:
-                        st.markdown("<p style='font-size:18px; color:#103d33;'><strong>¡Hoy es el día de tu revisión clínica!</strong></p>", unsafe_allow_html=True)
+                        texto_revision = f"Tu revisión clínica es hoy, {fecha_rev_str}."
                     else:
-                        st.markdown(f"<p style='font-size:18px; color:#103d33;'>Tu revisión clínica fue hace <strong>{abs(days_left)} días</strong>.</p>", unsafe_allow_html=True)
-                    
+                        texto_revision = f"Tu revisión clínica fue hace {abs(days_left)} días, el {fecha_rev_str}."
+
+                    reminder_html = f"""
+                    <div style='background:#fff8e1; border: 2px solid #fbc02d; border-radius:12px; padding:30px; text-align:center; margin-top:20px;'>
+                        <h2 style='color:#f57f17 !important; margin:0 0 15px 0;'>⚠️ Recordatorio de Revisión</h2>
+                        <p style='font-size:18px; color:#103d33; margin:0;'>{texto_revision}</p>
+                    </div>
+                    """
+                    st.markdown(reminder_html, unsafe_allow_html=True)
+
                     col_btn_w1, col_btn_w2, col_btn_w3 = st.columns([1, 1, 1])
                     if col_btn_w2.button("Aceptar y ver mi sesión", type="primary", use_container_width=True):
                         st.session_state[ack_key] = True
                         st.rerun()
-                    st.markdown("</div>", unsafe_allow_html=True)
                 
                 else:
                     nombre_paciente_ses = paciente_obj.get('name', '').strip() if paciente_obj else ''
@@ -1496,11 +1501,11 @@ else:
                             box_series_reps = f"""
                             <div style='display:flex; gap:10px; margin-top:10px;'>
                                 <div style='flex:1; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 10px; text-align:center;'>
-                                    <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Series</div>
+                                    <div style='font-size:11px; color:#13765d; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Series</div>
                                     <div style='font-size:18px; color:#103d33; font-weight:800; margin-top:2px;'>{series}</div>
                                 </div>
                                 <div style='flex:1; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 10px; text-align:center;'>
-                                    <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Repeticiones</div>
+                                    <div style='font-size:11px; color:#13765d; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Repeticiones</div>
                                     <div style='font-size:18px; color:#103d33; font-weight:800; margin-top:2px;'>{reps}</div>
                                 </div>
                             </div>
@@ -1508,7 +1513,7 @@ else:
 
                             notas_html = f"""
                             <div style='display:flex; align-items:center; gap:12px; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 12px; margin-top:8px;'>
-                                <div style='font-size:11px; color:#64756e; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; white-space:nowrap;'>Notas</div>
+                                <div style='font-size:11px; color:#13765d; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; white-space:nowrap;'>Notas</div>
                                 <div style='font-size:14px; color:#103d33; flex:1;'>{notes}</div>
                             </div>
                             """ if notes else ""
@@ -1517,7 +1522,7 @@ else:
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:12px 14px; margin-bottom:10px;'>
                                 <div style='display:flex; justify-content:space-between; align-items:center;'>
                                     <div style='font-size:15px; color:#103d33;'>
-                                        <strong>{idx}.</strong> {ex_data['name']}
+                                        <strong>{idx}. {ex_data['name']}</strong>
                                     </div>
                                     {btn_video_ses}
                                 </div>
@@ -1531,8 +1536,8 @@ else:
                     st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Sesión Terminada</h3>", unsafe_allow_html=True)
                     st.write("¿Cómo ha ido? Por favor, reporta la intensidad para tu fisioterapeuta.")
                     with st.form(f"checkin_form_{sesion_encontrada['id']}"):
-                        eva = st.slider("Dolor (EVA): 0 (Nada) a 10 (Máximo)", 0, 10, 0)
-                        borg = st.slider("Fatiga (Borg): 0 (Reposo) a 10 (Extenuante)", 0, 10, 0)
+                        eva = st.slider("**Dolor**: 0 (Nada) a 10 (Máximo)", 0, 10, 0)
+                        borg = st.slider("**Fatiga**: 0 (Reposo) a 10 (Extenuante)", 0, 10, 0)
                         comentarios = st.text_area("¿Alguna molestia o comentario? (Opcional)")
                         
                         if st.form_submit_button("Enviar Reporte a mi Fisio", type="primary"):
