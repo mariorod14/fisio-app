@@ -762,8 +762,7 @@ if st.session_state.admin_mode:
                             p["review_date"] = nueva_review_str
                             save_patients(patients); st.rerun()
 
-                    st.divider()
-                    st.markdown("#### 📖 Historial de Revisiones")
+                    st.markdown("<h4 style='margin-top:6px; margin-bottom:8px;'>📖 Historial de Revisiones</h4>", unsafe_allow_html=True)
 
                     p.setdefault("revisions", [])
 
@@ -778,14 +777,16 @@ if st.session_state.admin_mode:
                             except:
                                 fecha_rev_disp = ""
 
-                        col_exp, col_fecha_rev = st.columns([5, 1.4])
+                        col_exp, col_fecha_rev = st.columns([8, 1.3])
+                        with col_fecha_rev:
+                            st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+                            rev_fecha_input = st.text_input("Fecha", value=fecha_rev_disp, key=f"rev_fecha_{p['id']}_{r_idx}", placeholder="DD/MM/AAAA", label_visibility="collapsed")
                         with col_exp:
                             with st.expander(f"📋 {ordinal_revision(r_idx + 1)}"):
-                                rev_fecha_input = st.text_input("Fecha de esta revisión (DD/MM/AAAA):", value=fecha_rev_disp, key=f"rev_fecha_{p['id']}_{r_idx}", placeholder="Ej: 15/03/2026")
-                                rev_ana = st.text_area("Anamnesis (entrevista, historia clínica...):", value=rev.get("anamnesis", ""), key=f"rev_ana_{p['id']}_{r_idx}")
-                                rev_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):", value=rev.get("inspeccion", ""), key=f"rev_ins_{p['id']}_{r_idx}")
-                                rev_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):", value=rev.get("movilidad", ""), key=f"rev_mov_{p['id']}_{r_idx}")
-                                rev_fue = st.text_area("Fuerza (dinamometría...):", value=rev.get("fuerza", ""), key=f"rev_fue_{p['id']}_{r_idx}")
+                                rev_ana = st.text_area("**Anamnesis** (entrevista, historia clínica...):", value=rev.get("anamnesis", ""), key=f"rev_ana_{p['id']}_{r_idx}")
+                                rev_ins = st.text_area("**Inspección física** (temperatura, coloración, medidas...):", value=rev.get("inspeccion", ""), key=f"rev_ins_{p['id']}_{r_idx}")
+                                rev_mov = st.text_area("**Movilidad activa y pasiva** (ROM activo y pasivo...):", value=rev.get("movilidad", ""), key=f"rev_mov_{p['id']}_{r_idx}")
+                                rev_fue = st.text_area("**Fuerza** (dinamometría...):", value=rev.get("fuerza", ""), key=f"rev_fue_{p['id']}_{r_idx}")
 
                                 col_save_rev, col_del_rev = st.columns(2)
                                 if col_save_rev.button("💾 Guardar revisión", key=f"save_rev_{p['id']}_{r_idx}", type="primary", use_container_width=True):
@@ -810,8 +811,6 @@ if st.session_state.admin_mode:
                                     p["revisions"].pop(r_idx)
                                     save_patients(patients)
                                     st.rerun()
-                        with col_fecha_rev:
-                            st.markdown(f"<div style='margin-top:14px; text-align:right; font-size:13px; color:#64756e; font-weight:600;'>{fecha_rev_disp if fecha_rev_disp else 'Sin fecha'}</div>", unsafe_allow_html=True)
 
                     if st.button("➕ Añadir Revisión", key=f"add_rev_{p['id']}"):
                         p["revisions"].append({"date": "", "anamnesis": "", "inspeccion": "", "movilidad": "", "fuerza": ""})
