@@ -399,6 +399,113 @@ def get_patient_name(p_id):
         if str(p["id"]) == str(p_id): return p["name"]
     return "Paciente Eliminado"
 
+def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
+    """
+    Calcula el estado del semáforo de adherencia para un paciente,
+    en base a sus check-ins (dolor EVA, fatiga Borg, comentarios,
+    recencia) y su fecha de próxima revisión.
+    """
+    p_id = str(paciente["id"])
+
+    planes_paciente = [str(p["id"]) for p in todos_los_planes if str(p["patientId"]) == p_id]
+    checkins_pac = [c for c in todos_los_checkins if str(c.get("planId")) in planes_paciente]
+
+    motivos = []
+    estado = "VERDE"  # Por defecto
+
+    # Parsear la próxima revisión
+    rev_date_str = paciente.get("review_date", "")
+    dias_revision = None
+    if rev_date_str:
+        try:
+            r_date = datetime.datetime.strptime(rev_date_str, "%Y-%m-%d").date()
+            dias_revision = (r_date - datetime.date.today()).days
+        except ValueError:
+            pass
+
+    # Analizar check-ins si existen
+    if checkins_pac:
+        def parse_date(c):
+            try:
+                return datetime.datetime.strptime(c["date"], "%Y-%m-%d %H:%M")
+            except Exception:
+                return datetime.datetime.min
+
+        checkins_ordenados = sorted(checkins_pac, key=parse_date, reverse=True)
+        ultimo_checkin = checkins_ordenados[0]
+
+        try:
+            eva_act = float(ultimo_checkin.get("eva", 0))
+            borg_act = float(ultimo_checkin.get("borg", 0))
+            fecha_ult = parse_date(ultimo_checkin)
+            dias_sin_checkin = (datetime.datetime.now() - fecha_ult).days
+        except (ValueError, TypeError):
+            eva_act, borg_act, dias_sin_checkin = 0, 0, 999
+
+        # Delta de EVA respecto al check-in anterior
+        delta_eva = 0
+        if len(checkins_ordenados) > 1:
+            try:
+                eva_prev = float(checkins_ordenados[1].get("eva", 0))
+                delta_eva = eva_act - eva_prev
+            except (ValueError, TypeError):
+                delta_eva = 0
+
+        # --- REGLAS ROJAS ---
+        if eva_act >= 7:
+            estado = "ROJO"
+            motivos.append(f"Dolor muy alto (EVA {int(eva_act)}/10)")
+        if delta_eva >= 3:
+            estado = "ROJO"
+            motivos.append(f"Pico de dolor (subida de +{int(delta_eva)} puntos de EVA)")
+        if borg_act >= 8:
+            estado = "ROJO"
+            motivos.append(f"Fatiga extrema (Borg {int(borg_act)}/10)")
+        if dias_sin_checkin > 14 and planes_paciente:
+            estado = "ROJO"
+            motivos.append(f"Sin registros desde hace {dias_sin_checkin} días")
+
+        # --- REGLAS AMARILLAS (solo si no es ya rojo) ---
+        if estado != "ROJO":
+            if 4 <= eva_act <= 6:
+                estado = "AMARILLO"
+                motivos.append(f"Dolor moderado (EVA {int(eva_act)}/10)")
+            if 6 <= borg_act <= 7:
+                estado = "AMARILLO"
+                motivos.append(f"Fatiga moderada (Borg {int(borg_act)}/10)")
+            if 7 <= dias_sin_checkin <= 14 and planes_paciente:
+                estado = "AMARILLO"
+                motivos.append(f"Sin registros desde hace {dias_sin_checkin} días")
+            if ultimo_checkin.get("comment", "").strip():
+                estado = "AMARILLO"
+                motivos.append("Dejó un comentario en el último reporte")
+    else:
+        # No tiene check-ins registrados todavía
+        if planes_paciente:
+            estado = "AMARILLO"
+            motivos.append("Tiene sesión asignada pero aún no ha registrado ningún reporte")
+
+    # --- REGLAS POR FECHA DE REVISIÓN (pueden agravar el estado) ---
+    if dias_revision is not None:
+        if dias_revision < 0:
+            estado = "ROJO"
+            motivos.append(f"Revisión vencida hace {abs(dias_revision)} día(s)")
+        elif 0 <= dias_revision <= 3 and estado != "ROJO":
+            estado = "AMARILLO"
+            motivos.append(f"Próxima revisión en {dias_revision} día(s)")
+
+    iconos = {"ROJO": "🔴", "AMARILLO": "🟡", "VERDE": "🟢"}
+    colores_bg = {"ROJO": "#fdecec", "AMARILLO": "#fff8e1", "VERDE": "#e9f6f0"}
+    colores_txt = {"ROJO": "#aa3838", "AMARILLO": "#f57f17", "VERDE": "#13765d"}
+
+    return {
+        "estado": estado,
+        "icono": iconos[estado],
+        "motivos": motivos,
+        "bg_color": colores_bg[estado],
+        "text_color": colores_txt[estado]
+    }
+
 def get_exercise(e_id):
     for e in exercises:
         if str(e["id"]) == str(e_id): return e
@@ -1144,6 +1251,19 @@ if st.session_state.admin_mode:
                     format_func=get_patient_name, 
                     key="search_pac_seg"
                 )
+                
+                paciente_obj_seg = next((pp for pp in patients if str(pp["id"]) == str(paciente_sel_seg)), None)
+                tiene_sesiones_clinicas_seg = any(str(pl["patientId"]) == str(paciente_sel_seg) for pl in plans)
+
+                if paciente_obj_seg and tiene_sesiones_clinicas_seg:
+                    res_semaforo = calcular_semaforo_paciente(paciente_obj_seg, plans, checkins)
+                    motivos_str = " · ".join(res_semaforo["motivos"]) if res_semaforo["motivos"] else "Sin incidencias detectadas."
+                    st.markdown(f"""
+                    <div style='background:{res_semaforo["bg_color"]}; border:1px solid {res_semaforo["text_color"]}; border-radius:12px; padding:16px 20px; margin:12px 0 22px 0;'>
+                        <div style='font-size:17px; font-weight:800; color:{res_semaforo["text_color"]};'>{res_semaforo["icono"]} Adherencia: {res_semaforo["estado"].capitalize()}</div>
+                        <div style='font-size:13px; color:{res_semaforo["text_color"]}; margin-top:6px;'>{motivos_str}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 planes_paciente = [p["id"] for p in plans if str(p["patientId"]) == str(paciente_sel_seg)]
                 checkins_paciente = [c for c in checkins if str(c["planId"]) in planes_paciente]
