@@ -188,6 +188,7 @@ def get_patients():
                 "id": clean_str(r.get("id", "")), 
                 "name": clean_str(r.get("name", "")), 
                 "phone": clean_str(r.get("phone", "")),
+                "lesion": clean_str(r.get("lesion", "")),
                 "review_date": clean_str(r.get("review_date", "")),
                 "revisions": revisions
             })
@@ -204,10 +205,11 @@ def save_patients(patients_list):
     for p in patients_list:
         formatted.append({
             "id": p["id"], "name": p["name"], "phone": p.get("phone", ""),
+            "lesion": p.get("lesion", ""),
             "review_date": p.get("review_date", ""),
             "revisions": json.dumps(p.get("revisions", []))
         })
-    patient_columns = ["id", "name", "phone", "review_date", "revisions"]
+    patient_columns = ["id", "name", "phone", "lesion", "review_date", "revisions"]
     conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(formatted, columns=patient_columns))
     st.cache_data.clear()
 
@@ -674,10 +676,11 @@ if st.session_state.admin_mode:
         with tab_pac:
             with st.expander("➕ Añadir Nuevo Paciente", expanded=False):
                 with st.form("nuevo_paciente_form", clear_on_submit=True):
-                    c_np1, c_np2, c_np3 = st.columns([3, 1.5, 1.5])
+                    c_np1, c_np2, c_np3, c_np4 = st.columns([2.2, 1.3, 1.8, 1.5])
                     new_p_name = c_np1.text_input("Nombre completo:")
                     new_p_phone = c_np2.text_input("Teléfono:")
-                    new_p_review_input = c_np3.text_input("Próxima revisión (DD/MM/AAAA):", value="", placeholder="Ej: 15/03/2026")
+                    new_p_lesion = c_np3.text_input("Lesión:", placeholder="Ej: Esguince tobillo")
+                    new_p_review_input = c_np4.text_input("Próxima revisión (DD/MM/AAAA):", value="", placeholder="Ej: 15/03/2026")
                     
                     st.caption("Podrás añadir la anamnesis, inspección física, movilidad y fuerza de la primera revisión justo después de crear el paciente, desde su ficha.")
                     
@@ -695,6 +698,7 @@ if st.session_state.admin_mode:
                             else:
                                 patients.append({
                                     "id": str(uuid.uuid4()), "name": new_p_name, "phone": new_p_phone,
+                                    "lesion": new_p_lesion,
                                     "review_date": review_str,
                                     "revisions": []
                                 })
@@ -737,15 +741,16 @@ if st.session_state.admin_mode:
                     st.divider()
                     st.markdown("#### ⚙️ Datos del Paciente")
                     
-                    ce1, ce2, ce3 = st.columns([3, 1.5, 1.5])
+                    ce1, ce2, ce3, ce4 = st.columns([2.2, 1.3, 1.8, 1.5])
                     edit_name = ce1.text_input("Nombre del paciente", value=p["name"], key=f"name_{p['id']}")
                     edit_phone = ce2.text_input("Teléfono", value=p.get("phone", ""), key=f"phone_{p['id']}")
+                    edit_lesion = ce3.text_input("Lesión", value=p.get("lesion", ""), key=f"lesion_{p['id']}", placeholder="Ej: Esguince tobillo")
                     
                     try:
                         curr_rev_display = datetime.datetime.strptime(p.get("review_date", ""), "%Y-%m-%d").strftime("%d/%m/%Y")
                     except:
                         curr_rev_display = ""
-                    edit_review_input = ce3.text_input("Próxima revisión (DD/MM/AAAA)", value=curr_rev_display, key=f"rev_{p['id']}", placeholder="Ej: 15/03/2026")
+                    edit_review_input = ce4.text_input("Próxima revisión (DD/MM/AAAA)", value=curr_rev_display, key=f"rev_{p['id']}", placeholder="Ej: 15/03/2026")
                     
                     if st.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
                         nueva_review_str = ""
@@ -759,6 +764,7 @@ if st.session_state.admin_mode:
                             st.error("⚠️ La fecha de revisión no es válida. Usa el formato DD/MM/AAAA (ej: 15/03/2026).")
                         else:
                             p["name"] = edit_name; p["phone"] = edit_phone
+                            p["lesion"] = edit_lesion
                             p["review_date"] = nueva_review_str
                             save_patients(patients); st.rerun()
 
