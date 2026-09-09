@@ -88,6 +88,12 @@ def clean_str(val):
     if s.lower() == "nan": return ""
     return s
 
+ORDINALES_ES = ["Primera", "Segunda", "Tercera", "Cuarta", "Quinta", "Sexta", "Séptima", "Octava", "Novena", "Décima"]
+def ordinal_revision(n):
+    if 1 <= n <= len(ORDINALES_ES):
+        return f"{ORDINALES_ES[n-1]} revisión"
+    return f"Revisión {n}"
+
 def normalize_access_code(value):
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
@@ -156,15 +162,34 @@ def get_patients():
         df = df.dropna(how="all")
         records = []
         for _, r in df.iterrows():
+            revisions_raw = r.get("revisions", "[]")
+            revisions = []
+            if isinstance(revisions_raw, str) and revisions_raw.strip().startswith("["):
+                try:
+                    revisions = json.loads(revisions_raw)
+                except Exception:
+                    revisions = []
+
+            # Migración automática: si el paciente tenía los datos antiguos (una sola ficha)
+            # y todavía no tiene historial de revisiones, los convertimos en la primera revisión.
+            if not revisions:
+                old_ana = clean_str(r.get("anamnesis", ""))
+                old_ins = clean_str(r.get("inspeccion", ""))
+                old_mov = clean_str(r.get("movilidad", ""))
+                old_fue = clean_str(r.get("fuerza", ""))
+                if old_ana or old_ins or old_mov or old_fue:
+                    revisions = [{
+                        "date": "",
+                        "anamnesis": old_ana, "inspeccion": old_ins,
+                        "movilidad": old_mov, "fuerza": old_fue
+                    }]
+
             records.append({
                 "id": clean_str(r.get("id", "")), 
                 "name": clean_str(r.get("name", "")), 
                 "phone": clean_str(r.get("phone", "")),
                 "review_date": clean_str(r.get("review_date", "")),
-                "anamnesis": clean_str(r.get("anamnesis", "")),
-                "inspeccion": clean_str(r.get("inspeccion", "")),
-                "movilidad": clean_str(r.get("movilidad", "")),
-                "fuerza": clean_str(r.get("fuerza", ""))
+                "revisions": revisions
             })
         return records
     except Exception:
@@ -175,8 +200,15 @@ def save_patients(patients_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return
-    patient_columns = ["id", "name", "phone", "review_date", "anamnesis", "inspeccion", "movilidad", "fuerza"]
-    conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(patients_list, columns=patient_columns))
+    formatted = []
+    for p in patients_list:
+        formatted.append({
+            "id": p["id"], "name": p["name"], "phone": p.get("phone", ""),
+            "review_date": p.get("review_date", ""),
+            "revisions": json.dumps(p.get("revisions", []))
+        })
+    patient_columns = ["id", "name", "phone", "review_date", "revisions"]
+    conn.update(spreadsheet=SHEET_URL, worksheet="pacientes", data=pd.DataFrame(formatted, columns=patient_columns))
     st.cache_data.clear()
 
 def get_exercises():
@@ -645,12 +677,9 @@ if st.session_state.admin_mode:
                     c_np1, c_np2, c_np3 = st.columns([3, 1.5, 1.5])
                     new_p_name = c_np1.text_input("Nombre completo:")
                     new_p_phone = c_np2.text_input("Teléfono:")
-                    new_p_review_input = c_np3.text_input("Fecha de revisión (DD/MM/AAAA):", value="", placeholder="Ej: 15/03/2026")
+                    new_p_review_input = c_np3.text_input("Próxima revisión (DD/MM/AAAA):", value="", placeholder="Ej: 15/03/2026")
                     
-                    new_p_ana = st.text_area("Anamnesis (entrevista, historia clínica...):")
-                    new_p_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):")
-                    new_p_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):")
-                    new_p_fue = st.text_area("Fuerza (dinamometría...):")
+                    st.caption("Podrás añadir la anamnesis, inspección física, movilidad y fuerza de la primera revisión justo después de crear el paciente, desde su ficha.")
                     
                     if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                         if new_p_name:
@@ -667,7 +696,7 @@ if st.session_state.admin_mode:
                                 patients.append({
                                     "id": str(uuid.uuid4()), "name": new_p_name, "phone": new_p_phone,
                                     "review_date": review_str,
-                                    "anamnesis": new_p_ana, "inspeccion": new_p_ins, "movilidad": new_p_mov, "fuerza": new_p_fue
+                                    "revisions": []
                                 })
                                 save_patients(patients)
                                 st.success("¡Paciente añadido y sincronizado!")
@@ -706,7 +735,7 @@ if st.session_state.admin_mode:
                         st.write("No tiene planes ni programas asignados todavía.")
 
                     st.divider()
-                    st.markdown("#### ⚙️ Datos Clínicos del Paciente")
+                    st.markdown("#### ⚙️ Datos del Paciente")
                     
                     ce1, ce2, ce3 = st.columns([3, 1.5, 1.5])
                     edit_name = ce1.text_input("Nombre del paciente", value=p["name"], key=f"name_{p['id']}")
@@ -716,15 +745,9 @@ if st.session_state.admin_mode:
                         curr_rev_display = datetime.datetime.strptime(p.get("review_date", ""), "%Y-%m-%d").strftime("%d/%m/%Y")
                     except:
                         curr_rev_display = ""
-                    edit_review_input = ce3.text_input("Fecha de revisión (DD/MM/AAAA)", value=curr_rev_display, key=f"rev_{p['id']}", placeholder="Ej: 15/03/2026")
+                    edit_review_input = ce3.text_input("Próxima revisión (DD/MM/AAAA)", value=curr_rev_display, key=f"rev_{p['id']}", placeholder="Ej: 15/03/2026")
                     
-                    edit_ana = st.text_area("Anamnesis (entrevista, historia clínica...):", value=p.get("anamnesis", ""), key=f"ana_{p['id']}")
-                    edit_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):", value=p.get("inspeccion", ""), key=f"ins_{p['id']}")
-                    edit_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):", value=p.get("movilidad", ""), key=f"mov_{p['id']}")
-                    edit_fue = st.text_area("Fuerza (dinamometría...):", value=p.get("fuerza", ""), key=f"fue_{p['id']}")
-                    
-                    c1, c2 = st.columns(2)
-                    if c1.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
+                    if st.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
                         nueva_review_str = ""
                         fecha_valida = True
                         if edit_review_input.strip():
@@ -737,9 +760,65 @@ if st.session_state.admin_mode:
                         else:
                             p["name"] = edit_name; p["phone"] = edit_phone
                             p["review_date"] = nueva_review_str
-                            p["anamnesis"] = edit_ana; p["inspeccion"] = edit_ins
-                            p["movilidad"] = edit_mov; p["fuerza"] = edit_fue
                             save_patients(patients); st.rerun()
+
+                    st.divider()
+                    st.markdown("#### 📖 Historial de Revisiones")
+
+                    p.setdefault("revisions", [])
+
+                    if not p["revisions"]:
+                        st.caption("Este paciente todavía no tiene ninguna revisión registrada.")
+
+                    for r_idx, rev in enumerate(p["revisions"]):
+                        fecha_rev_disp = ""
+                        if rev.get("date"):
+                            try:
+                                fecha_rev_disp = datetime.datetime.strptime(rev["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                            except:
+                                fecha_rev_disp = ""
+
+                        col_exp, col_fecha_rev = st.columns([5, 1.4])
+                        with col_exp:
+                            with st.expander(f"📋 {ordinal_revision(r_idx + 1)}"):
+                                rev_fecha_input = st.text_input("Fecha de esta revisión (DD/MM/AAAA):", value=fecha_rev_disp, key=f"rev_fecha_{p['id']}_{r_idx}", placeholder="Ej: 15/03/2026")
+                                rev_ana = st.text_area("Anamnesis (entrevista, historia clínica...):", value=rev.get("anamnesis", ""), key=f"rev_ana_{p['id']}_{r_idx}")
+                                rev_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):", value=rev.get("inspeccion", ""), key=f"rev_ins_{p['id']}_{r_idx}")
+                                rev_mov = st.text_area("Movilidad activa y pasiva (ROM activo y pasivo...):", value=rev.get("movilidad", ""), key=f"rev_mov_{p['id']}_{r_idx}")
+                                rev_fue = st.text_area("Fuerza (dinamometría...):", value=rev.get("fuerza", ""), key=f"rev_fue_{p['id']}_{r_idx}")
+
+                                col_save_rev, col_del_rev = st.columns(2)
+                                if col_save_rev.button("💾 Guardar revisión", key=f"save_rev_{p['id']}_{r_idx}", type="primary", use_container_width=True):
+                                    fecha_rev_valida = True
+                                    nueva_fecha_rev = ""
+                                    if rev_fecha_input.strip():
+                                        try:
+                                            nueva_fecha_rev = datetime.datetime.strptime(rev_fecha_input.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+                                        except ValueError:
+                                            fecha_rev_valida = False
+                                    if not fecha_rev_valida:
+                                        st.error("⚠️ La fecha no es válida. Usa el formato DD/MM/AAAA.")
+                                    else:
+                                        p["revisions"][r_idx] = {
+                                            "date": nueva_fecha_rev, "anamnesis": rev_ana,
+                                            "inspeccion": rev_ins, "movilidad": rev_mov, "fuerza": rev_fue
+                                        }
+                                        save_patients(patients)
+                                        st.success("Revisión guardada.")
+                                        st.rerun()
+                                if col_del_rev.button("🗑️ Eliminar revisión", key=f"del_rev_{p['id']}_{r_idx}", use_container_width=True):
+                                    p["revisions"].pop(r_idx)
+                                    save_patients(patients)
+                                    st.rerun()
+                        with col_fecha_rev:
+                            st.markdown(f"<div style='margin-top:14px; text-align:right; font-size:13px; color:#64756e; font-weight:600;'>{fecha_rev_disp if fecha_rev_disp else 'Sin fecha'}</div>", unsafe_allow_html=True)
+
+                    if st.button("➕ Añadir Revisión", key=f"add_rev_{p['id']}"):
+                        p["revisions"].append({"date": "", "anamnesis": "", "inspeccion": "", "movilidad": "", "fuerza": ""})
+                        save_patients(patients)
+                        st.rerun()
+
+                    st.divider()
                     if st.session_state.confirm_delete_patient_id == p["id"]:
                         st.warning("Vas a borrar definitivamente este paciente, todas sus sesiones, programas y reportes. Esta acción no se puede deshacer desde la aplicación.")
                         confirm_col, cancel_col = st.columns(2)
@@ -759,7 +838,7 @@ if st.session_state.admin_mode:
                         if cancel_col.button("Cancelar", key=f"cancel_del_patient_{p['id']}", use_container_width=True):
                             st.session_state.confirm_delete_patient_id = None
                             st.rerun()
-                    elif c2.button("🗑️ Borrar Paciente", key=f"del_{p['id']}"):
+                    elif st.button("🗑️ Borrar Paciente", key=f"del_{p['id']}"):
                         st.session_state.confirm_delete_patient_id = p["id"]
                         st.rerun()
 
