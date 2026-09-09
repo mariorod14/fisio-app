@@ -91,6 +91,14 @@ def clean_str(val):
 def normalize_access_code(value):
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
+def extract_pin_from_input(raw_value):
+    """Si el paciente pega el enlace completo (con ?pin=...), nos quedamos solo con el código."""
+    raw = str(raw_value).strip()
+    if "pin=" in raw.lower():
+        idx_pin = raw.lower().rfind("pin=")
+        raw = raw[idx_pin + 4:]
+    return raw
+
 def access_code_matches(attempt, stored_code):
     normalized_attempt = normalize_access_code(attempt)
     normalized_stored_code = normalize_access_code(stored_code)
@@ -637,7 +645,7 @@ if st.session_state.admin_mode:
                     c_np1, c_np2, c_np3 = st.columns([3, 1.5, 1.5])
                     new_p_name = c_np1.text_input("Nombre completo:")
                     new_p_phone = c_np2.text_input("Teléfono:")
-                    new_p_review = c_np3.date_input("Fecha de revisión:", value=None)
+                    new_p_review_input = c_np3.text_input("Fecha de revisión (DD/MM/AAAA):", value="", placeholder="Ej: 15/03/2026")
                     
                     new_p_ana = st.text_area("Anamnesis (entrevista, historia clínica...):")
                     new_p_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):")
@@ -646,24 +654,33 @@ if st.session_state.admin_mode:
                     
                     if st.form_submit_button("Guardar Paciente Nuevo", type="primary"):
                         if new_p_name:
-                            review_str = str(new_p_review) if new_p_review else ""
-                            patients.append({
-                                "id": str(uuid.uuid4()), "name": new_p_name, "phone": new_p_phone,
-                                "review_date": review_str,
-                                "anamnesis": new_p_ana, "inspeccion": new_p_ins, "movilidad": new_p_mov, "fuerza": new_p_fue
-                            })
-                            save_patients(patients)
-                            st.success("¡Paciente añadido y sincronizado!")
-                            st.rerun()
+                            review_str = ""
+                            fecha_valida = True
+                            if new_p_review_input.strip():
+                                try:
+                                    review_str = datetime.datetime.strptime(new_p_review_input.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+                                except ValueError:
+                                    fecha_valida = False
+                            if not fecha_valida:
+                                st.error("⚠️ La fecha de revisión no es válida. Usa el formato DD/MM/AAAA (ej: 15/03/2026).")
+                            else:
+                                patients.append({
+                                    "id": str(uuid.uuid4()), "name": new_p_name, "phone": new_p_phone,
+                                    "review_date": review_str,
+                                    "anamnesis": new_p_ana, "inspeccion": new_p_ins, "movilidad": new_p_mov, "fuerza": new_p_fue
+                                })
+                                save_patients(patients)
+                                st.success("¡Paciente añadido y sincronizado!")
+                                st.rerun()
 
             total_pacs = len(patients)
             st.markdown(f"<h3 style='margin-top:20px;'>Directorio y Perfiles ({total_pacs})</h3>", unsafe_allow_html=True)
-            search_pac = st.text_input("🔍 Buscar paciente por nombre:")
+            search_pac = st.text_input("🔍 Buscar paciente por nombre o teléfono:")
             
             pacs_filtrados = patients
             if search_pac:
                 q_pac = search_pac.lower()
-                pacs_filtrados = [p for p in pacs_filtrados if q_pac in p["name"].lower()]
+                pacs_filtrados = [p for p in pacs_filtrados if q_pac in p["name"].lower() or q_pac in p.get("phone", "").lower()]
 
             if not pacs_filtrados:
                 st.info("No se han encontrado pacientes.")
@@ -696,10 +713,10 @@ if st.session_state.admin_mode:
                     edit_phone = ce2.text_input("Teléfono", value=p.get("phone", ""), key=f"phone_{p['id']}")
                     
                     try:
-                        curr_rev_date = datetime.datetime.strptime(p.get("review_date", ""), "%Y-%m-%d").date()
+                        curr_rev_display = datetime.datetime.strptime(p.get("review_date", ""), "%Y-%m-%d").strftime("%d/%m/%Y")
                     except:
-                        curr_rev_date = None
-                    edit_review = ce3.date_input("Fecha de revisión", value=curr_rev_date, key=f"rev_{p['id']}")
+                        curr_rev_display = ""
+                    edit_review_input = ce3.text_input("Fecha de revisión (DD/MM/AAAA)", value=curr_rev_display, key=f"rev_{p['id']}", placeholder="Ej: 15/03/2026")
                     
                     edit_ana = st.text_area("Anamnesis (entrevista, historia clínica...):", value=p.get("anamnesis", ""), key=f"ana_{p['id']}")
                     edit_ins = st.text_area("Inspección física (temperatura, coloración, medidas...):", value=p.get("inspeccion", ""), key=f"ins_{p['id']}")
@@ -708,11 +725,21 @@ if st.session_state.admin_mode:
                     
                     c1, c2 = st.columns(2)
                     if c1.button("💾 Actualizar Datos", key=f"upd_{p['id']}", type="primary"):
-                        p["name"] = edit_name; p["phone"] = edit_phone
-                        p["review_date"] = str(edit_review) if edit_review else ""
-                        p["anamnesis"] = edit_ana; p["inspeccion"] = edit_ins
-                        p["movilidad"] = edit_mov; p["fuerza"] = edit_fue
-                        save_patients(patients); st.rerun()
+                        nueva_review_str = ""
+                        fecha_valida = True
+                        if edit_review_input.strip():
+                            try:
+                                nueva_review_str = datetime.datetime.strptime(edit_review_input.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+                            except ValueError:
+                                fecha_valida = False
+                        if not fecha_valida:
+                            st.error("⚠️ La fecha de revisión no es válida. Usa el formato DD/MM/AAAA (ej: 15/03/2026).")
+                        else:
+                            p["name"] = edit_name; p["phone"] = edit_phone
+                            p["review_date"] = nueva_review_str
+                            p["anamnesis"] = edit_ana; p["inspeccion"] = edit_ins
+                            p["movilidad"] = edit_mov; p["fuerza"] = edit_fue
+                            save_patients(patients); st.rerun()
                     if st.session_state.confirm_delete_patient_id == p["id"]:
                         st.warning("Vas a borrar definitivamente este paciente, todas sus sesiones, programas y reportes. Esta acción no se puede deshacer desde la aplicación.")
                         confirm_col, cancel_col = st.columns(2)
@@ -882,7 +909,7 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso es: {pl['pin']}\n\n¡A por ello!"
+                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={pl['pin']}\n\n¡A por ello!"
                                 st.code(mensaje_wa, language="markdown")
                         with c_del:
                             if st.session_state.confirm_delete_session_id == pl["id"]:
@@ -999,7 +1026,7 @@ if st.session_state.admin_mode:
                         st.success("¡Sesión guardada!")
                         
                         nombre_paciente = get_patient_name(paciente_sel)
-                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso es: {nuevo_pin}\n\n¡A por ello!"
+                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
 
@@ -1115,7 +1142,7 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso es: {pr['pin']}\n\n¡A entrenar!"
+                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={pr['pin']}\n\n¡A entrenar!"
                                 st.code(mensaje_wa_gen, language="markdown")
                         with c_del:
                             if st.session_state.confirm_delete_program_id == pr["id"]:
@@ -1314,7 +1341,7 @@ if st.session_state.admin_mode:
                             st.success("¡Programa de AF creado con éxito!")
                             
                             nombre_p = get_patient_name(af_paciente)
-                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu código de acceso es: {nuevo_pin_af}\n\n¡A por todas!"
+                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A por todas!"
                             st.info("Copia el mensaje para mandarlo por WhatsApp:")
                             st.code(mensaje_wa_gen, language="markdown")
 
@@ -1336,7 +1363,7 @@ else:
                     minutes = max(1, int(remaining.total_seconds() // 60) + 1)
                     st.error(f"Por seguridad, espera aproximadamente {minutes} minuto(s) antes de volver a intentarlo.")
                 elif btn_login and pin_input:
-                    val_pin = normalize_access_code(pin_input)
+                    val_pin = normalize_access_code(extract_pin_from_input(pin_input))
                     admin_access_code = get_admin_access_code()
                     session_match = next((p for p in plans if p.get("isActive", True) and access_code_matches(val_pin, p.get("pin", ""))), None)
                     program_match = next((pr for pr in programs_af if access_code_matches(val_pin, pr.get("pin", ""))), None)
@@ -1418,7 +1445,7 @@ else:
                             card_af_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
-                                    {prio_badge}{ex_data['name']} 🔄 {series}x{reps}{notas_str}
+                                    {prio_badge}<span style='text-decoration:underline;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}
                                 </div>
                                 {btn_video}
                             </div>
