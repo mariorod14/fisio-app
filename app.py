@@ -779,7 +779,6 @@ if st.session_state.admin_mode:
 
                         col_exp, col_fecha_rev = st.columns([8, 1.3])
                         with col_fecha_rev:
-                            st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
                             rev_fecha_input = st.text_input("Fecha", value=fecha_rev_disp, key=f"rev_fecha_{p['id']}_{r_idx}", placeholder="DD/MM/AAAA", label_visibility="collapsed")
                         with col_exp:
                             with st.expander(f"📋 {ordinal_revision(r_idx + 1)}"):
