@@ -909,7 +909,7 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={pl['pin']}\n\n¡A por ello!"
+                                mensaje_wa = f"¡Hola {get_patient_name(pl['patientId'])}! 👋\n\nAquí tienes tu sesión de fisioterapia: *{pl['title']}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={pl['pin']}\n\n¡A por ello!"
                                 st.code(mensaje_wa, language="markdown")
                         with c_del:
                             if st.session_state.confirm_delete_session_id == pl["id"]:
@@ -1026,7 +1026,7 @@ if st.session_state.admin_mode:
                         st.success("¡Sesión guardada!")
                         
                         nombre_paciente = get_patient_name(paciente_sel)
-                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Para ver tus ejercicios y vídeos, entra en este enlace:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={nuevo_pin}\n\n¡A por ello!"
+                        mensaje_whatsapp = f"¡Hola {nombre_paciente}! 👋\n\nAquí tienes tu nueva sesión de fisioterapia: *{titulo_sesion}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={nuevo_pin}\n\n¡A por ello!"
                         st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
                         st.code(mensaje_whatsapp, language="markdown")
 
@@ -1142,7 +1142,7 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Accede directamente desde aquí:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={pr['pin']}\n\n¡A entrenar!"
+                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={pr['pin']}\n\n¡A entrenar!"
                                 st.code(mensaje_wa_gen, language="markdown")
                         with c_del:
                             if st.session_state.confirm_delete_program_id == pr["id"]:
@@ -1341,7 +1341,7 @@ if st.session_state.admin_mode:
                             st.success("¡Programa de AF creado con éxito!")
                             
                             nombre_p = get_patient_name(af_paciente)
-                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Accede directamente desde tu móvil:\n{APP_URL}\n\n🔑 Tu código de acceso (mantén pulsado el enlace para copiarlo):\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A por todas!"
+                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A por todas!"
                             st.info("Copia el mensaje para mandarlo por WhatsApp:")
                             st.code(mensaje_wa_gen, language="markdown")
 
@@ -1349,6 +1349,23 @@ if st.session_state.admin_mode:
 # MÓDULO 2: PORTAL DEL PACIENTE / FORMULARIO LOGIN
 # =============================================================
 else:
+    # Auto-acceso: si el paciente entra desde el enlace con el código incluido (?pin=...),
+    # entramos directamente a su sesión sin que tenga que escribir ni pegar nada.
+    if not st.session_state.logged_pin and not st.session_state.admin_mode and not login_is_temporarily_locked():
+        try:
+            qp_pin_raw = st.query_params.get("pin", "")
+        except Exception:
+            qp_pin_raw = st.experimental_get_query_params().get("pin", [""])[0]
+
+        if qp_pin_raw:
+            val_pin_auto = normalize_access_code(extract_pin_from_input(qp_pin_raw))
+            session_match_auto = next((p for p in plans if p.get("isActive", True) and access_code_matches(val_pin_auto, p.get("pin", ""))), None)
+            program_match_auto = next((pr for pr in programs_af if access_code_matches(val_pin_auto, pr.get("pin", ""))), None)
+            if session_match_auto or program_match_auto:
+                reset_login_attempts()
+                st.session_state.logged_pin = val_pin_auto
+                st.rerun()
+
     if not st.session_state.logged_pin:
         st.markdown("<div style='text-align:center; margin-top:40px;'><h1 style='font-size:27px;'>🏋️ Acceso a tu Sesión o Programa</h1><p style='color:#64756e;'>Introduce tu código de acceso</p></div>", unsafe_allow_html=True)
         
@@ -1445,7 +1462,7 @@ else:
                             card_af_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
-                                    {prio_badge}<span style='text-decoration:underline;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}
+                                    {prio_badge}<span style='font-weight:600;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}
                                 </div>
                                 {btn_video}
                             </div>
