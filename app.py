@@ -94,6 +94,11 @@ def ordinal_revision(n):
         return f"{ORDINALES_ES[n-1]} revisión"
     return f"Revisión {n}"
 
+def tiene_video_valido(url):
+    """Comprueba que haya un enlace de vídeo real y no un simple texto de relleno (ej: 'a')."""
+    u = str(url).strip()
+    return u.lower().startswith("http")
+
 def normalize_access_code(value):
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
@@ -1056,7 +1061,7 @@ if st.session_state.admin_mode:
                         ej_name = ej_obj['name'] if ej_obj else "Ejercicio"
                         sin_video = False
                         
-                        if ej_obj and not ej_obj.get("videoUrl", "").strip():
+                        if ej_obj and not tiene_video_valido(ej_obj.get("videoUrl", "")):
                             sin_video = True
                             has_missing_videos = True
                             ej_name += " ⚠️ (SIN VÍDEO)"
@@ -1225,7 +1230,7 @@ if st.session_state.admin_mode:
                         with c_copy:
                             with st.popover("📋 Copiar", use_container_width=True):
                                 st.caption("Copia el mensaje usando el icono de la esquina superior derecha:")
-                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{pr['title']}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={pr['pin']}\n\n¡A entrenar!"
+                                mensaje_wa_gen = f"¡Hola {get_patient_name(pr['patientId'])}! 👋\n\nAquí tienes tu programa de entrenamiento: *{pr['title']}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={pr['pin']}\n\n¡A entrenar!"
                                 st.code(mensaje_wa_gen, language="markdown")
                         with c_del:
                             if st.session_state.confirm_delete_program_id == pr["id"]:
@@ -1345,7 +1350,7 @@ if st.session_state.admin_mode:
                                     ename = ej_obj['name'] if ej_obj else "Ejercicio"
                                     sin_video_af = False
                                     
-                                    if ej_obj and not ej_obj.get("videoUrl", "").strip():
+                                    if ej_obj and not tiene_video_valido(ej_obj.get("videoUrl", "")):
                                         sin_video_af = True
                                         falta_algun_video_af = True
                                         ename += " ⚠️ (SIN VÍDEO)"
@@ -1424,7 +1429,7 @@ if st.session_state.admin_mode:
                             st.success("¡Programa de AF creado con éxito!")
                             
                             nombre_p = get_patient_name(af_paciente)
-                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento de fuerza: *{af_titulo}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A por todas!"
+                            mensaje_wa_gen = f"¡Hola {nombre_p}! 👋\n\nAquí tienes tu programa de entrenamiento: *{af_titulo}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A por todas!"
                             st.info("Copia el mensaje para mandarlo por WhatsApp:")
                             st.code(mensaje_wa_gen, language="markdown")
 
@@ -1540,7 +1545,7 @@ else:
                             notas_str = f" 📝 {notes}" if notes else ""
                             
                             vid_url = ex_data.get('videoUrl', '').strip()
-                            btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
+                            btn_video = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:12px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if tiene_video_valido(vid_url) else ""
                                 
                             card_af_html = f"""
                             <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;'>
@@ -1623,7 +1628,7 @@ else:
                             notes = inst_data.get("notes", "")
                             
                             vid_url = ex_data.get("videoUrl", "").strip()
-                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:14px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if vid_url else ""
+                            btn_video_ses = f"<a href='{vid_url}' target='_blank' style='background:#13765d; color:white; text-decoration:none; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:14px; margin-left:10px; white-space:nowrap;'>▶ Vídeo</a>" if tiene_video_valido(vid_url) else ""
 
                             box_series_reps = f"""
                             <div style='display:flex; gap:10px; margin-top:10px;'>
