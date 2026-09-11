@@ -7,6 +7,8 @@ import secrets
 import hmac
 import uuid
 import json
+from urllib.parse import urlparse, parse_qs
+import streamlit.components.v1 as components
 
 # Configuración básica
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="expanded")
@@ -1557,10 +1559,76 @@ if st.session_state.admin_mode:
 # MÓDULO 2: PORTAL DEL PACIENTE / FORMULARIO LOGIN
 # =============================================================
 else:
+    def get_youtube_embed_url(url):
+        """Convierte enlaces habituales de YouTube a una URL de embed compatible con iframe."""
+        try:
+            raw_url = str(url).strip()
+            if not raw_url:
+                return None
+
+            # Asegura un esquema para poder analizar enlaces pegados sin https://
+            normalized_url = raw_url if raw_url.lower().startswith(("http://", "https://")) else f"https://{raw_url}"
+            parsed = urlparse(normalized_url)
+            host = parsed.netloc.lower().split(":")[0]
+            path_parts = [part for part in parsed.path.split("/") if part]
+            video_id = None
+
+            # youtube.com/watch?v=XXXXXXXXXXX
+            if host in {"youtube.com", "www.youtube.com", "m.youtube.com"} and parsed.path == "/watch":
+                video_id = parse_qs(parsed.query).get("v", [None])[0]
+
+            # youtu.be/XXXXXXXXXXX
+            elif host in {"youtu.be", "www.youtu.be"} and path_parts:
+                video_id = path_parts[0]
+
+            # youtube.com/shorts/XXXXXXXXXXX
+            elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"} and len(path_parts) >= 2 and path_parts[0].lower() == "shorts":
+                video_id = path_parts[1]
+
+            # youtube.com/embed/XXXXXXXXXXX (por si ya viene en formato embed)
+            elif host in {"youtube.com", "www.youtube.com", "m.youtube.com"} and len(path_parts) >= 2 and path_parts[0].lower() == "embed":
+                video_id = path_parts[1]
+
+            if not video_id:
+                return None
+
+            # Limpia parámetros accidentales del ID y usa el dominio de privacidad de YouTube.
+            video_id = video_id.strip().split("?")[0].split("&")[0]
+            if not video_id:
+                return None
+
+            return (
+                f"https://www.youtube-nocookie.com/embed/{video_id}"
+                "?rel=0&modestbranding=1&playsinline=1"
+            )
+        except Exception:
+            return None
+
     @st.dialog("🎥 Reproductor de Vídeo", width="large")
     def modal_ver_video(url, nombre):
-        st.markdown(f"<h3 style='text-align:center; color:var(--dark); margin-bottom: 20px;'>{nombre}</h3>", unsafe_allow_html=True)
-        st.video(url)
+        """Reproduce vídeos de YouTube correctamente dentro del diálogo del paciente."""
+        st.markdown(
+            f"<h3 style='text-align:center; color:var(--dark); margin-bottom: 20px;'>{nombre}</h3>",
+            unsafe_allow_html=True
+        )
+
+        video_url = str(url or "").strip()
+        youtube_embed = get_youtube_embed_url(video_url)
+
+        if youtube_embed:
+            # st.video() puede mostrar el contenedor sin llegar a reproducir correctamente
+            # determinados enlaces de YouTube dentro de un st.dialog. Un iframe de YouTube
+            # con la URL /embed/ es mucho más robusto para este caso.
+            components.iframe(
+                youtube_embed,
+                height=500,
+                scrolling=False
+            )
+        elif video_url.lower().startswith(("http://", "https://")):
+            # Compatibilidad con vídeos directos (.mp4, etc.) que no sean de YouTube.
+            st.video(video_url)
+        else:
+            st.error("⚠️ El ejercicio no tiene un enlace de vídeo válido.")
 
     # Auto-acceso: si el paciente entra desde el enlace con el código incluido (?pin=...),
     # entramos directamente a su sesión sin que tenga que escribir ni pegar nada.
