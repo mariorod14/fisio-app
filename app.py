@@ -1557,6 +1557,11 @@ if st.session_state.admin_mode:
 # MÓDULO 2: PORTAL DEL PACIENTE / FORMULARIO LOGIN
 # =============================================================
 else:
+    @st.dialog("🎥 Reproductor de Vídeo", width="large")
+    def modal_ver_video(url, nombre):
+        st.markdown(f"<h3 style='text-align:center; color:var(--dark); margin-bottom: 20px;'>{nombre}</h3>", unsafe_allow_html=True)
+        st.video(url)
+
     # Auto-acceso: si el paciente entra desde el enlace con el código incluido (?pin=...),
     # entramos directamente a su sesión sin que tenga que escribir ni pegar nada.
     if not st.session_state.logged_pin and not st.session_state.admin_mode and not login_is_temporarily_locked():
@@ -1663,21 +1668,16 @@ else:
                             
                             prio_badge = "⭐ " if item.get('isPriority') else ""
                             notas_str = f" 📝 {notes}" if notes else ""
-                            
                             vid_url = ex_data.get('videoUrl', '').strip()
-                                
-                            card_af_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;'>
-                                <div style='font-size:15px; color:#103d33;'>
-                                    {prio_badge}<span style='font-weight:600;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}
-                                </div>
-                            </div>
-                            """
                             
-                            st.markdown(card_af_html, unsafe_allow_html=True)
-                            if tiene_video_valido(vid_url):
-                                with st.expander(f"▶ Ver vídeo: {ex_data['name']}", expanded=False):
-                                    st.video(vid_url)
+                            with st.container(border=True):
+                                col_txt, col_btn = st.columns([4, 1])
+                                with col_txt:
+                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'>{prio_badge}<span style='font-weight:600;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}</div>", unsafe_allow_html=True)
+                                with col_btn:
+                                    if tiene_video_valido(vid_url):
+                                        if st.button("▶ Vídeo", key=f"v_af_{pr['id']}_{d_idx}_{block.get('blockTitle','b')}_{idx}", type="primary", use_container_width=True):
+                                            modal_ver_video(vid_url, ex_data['name'])
 
         elif sesion_encontrada:
             sesiones_del_pac = [pl for pl in plans if pl.get("isActive", True) and str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
@@ -1747,7 +1747,6 @@ else:
                             series = inst_data.get("series", "-")
                             reps = inst_data.get("reps", "-")
                             notes = inst_data.get("notes", "")
-                            
                             vid_url = ex_data.get("videoUrl", "").strip()
 
                             box_series_reps = f"""
@@ -1770,21 +1769,16 @@ else:
                             </div>
                             """ if notes else ""
 
-                            card_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:12px 14px; margin-bottom:6px;'>
-                                <div style='display:flex; justify-content:space-between; align-items:center;'>
-                                    <div style='font-size:15px; color:#103d33;'>
-                                        <strong>{idx}. {ex_data['name']}</strong>
-                                    </div>
-                                </div>
-                                {box_series_reps}
-                                {notas_html}
-                            </div>
-                            """
-                            st.markdown(card_html, unsafe_allow_html=True)
-                            if tiene_video_valido(vid_url):
-                                with st.expander(f"▶ Ver vídeo: {ex_data['name']}", expanded=False):
-                                    st.video(vid_url)
+                            with st.container(border=True):
+                                col_txt, col_btn = st.columns([3, 1])
+                                with col_txt:
+                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
+                                with col_btn:
+                                    if tiene_video_valido(vid_url):
+                                        if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=True):
+                                            modal_ver_video(vid_url, ex_data['name'])
+                                
+                                st.markdown(box_series_reps + notas_html, unsafe_allow_html=True)
                     
                     st.divider()
                     st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Sesión Terminada</h3>", unsafe_allow_html=True)
