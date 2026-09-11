@@ -1667,7 +1667,7 @@ else:
                             vid_url = ex_data.get('videoUrl', '').strip()
                                 
                             card_af_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px 10px {'0 0' if tiene_video_valido(vid_url) else '10px 10px'}; border-bottom:{'none' if tiene_video_valido(vid_url) else '1px solid #dce7e2'}; padding:10px 14px; margin-bottom:{'0' if tiene_video_valido(vid_url) else '8px'};'>
+                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:10px 14px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;'>
                                 <div style='font-size:15px; color:#103d33;'>
                                     {prio_badge}<span style='font-weight:600;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}
                                 </div>
@@ -1675,13 +1675,9 @@ else:
                             """
                             
                             st.markdown(card_af_html, unsafe_allow_html=True)
-
                             if tiene_video_valido(vid_url):
-                                with st.container(border=False):
-                                    st.markdown("<div style='border:1px solid #dce7e2; border-top:none; border-radius:0 0 10px 10px; padding:0 6px 6px 6px; margin-bottom:8px;'>", unsafe_allow_html=True)
-                                    with st.expander("▶ Ver vídeo"):
-                                        st.video(vid_url)
-                                    st.markdown("</div>", unsafe_allow_html=True)
+                                with st.expander(f"▶ Ver vídeo: {ex_data['name']}", expanded=False):
+                                    st.video(vid_url)
 
         elif sesion_encontrada:
             sesiones_del_pac = [pl for pl in plans if pl.get("isActive", True) and str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
@@ -1774,23 +1770,21 @@ else:
                             </div>
                             """ if notes else ""
 
-                            hay_video = tiene_video_valido(vid_url)
                             card_html = f"""
-                            <div style='background:#fff; border:1px solid #dce7e2; border-bottom:{'none' if hay_video else '1px solid #dce7e2'}; border-radius:{'10px 10px 0 0' if hay_video else '10px'}; padding:12px 14px; margin-bottom:{'0' if hay_video else '10px'};'>
-                                <div style='font-size:15px; color:#103d33;'>
-                                    <strong>{idx}. {ex_data['name']}</strong>
+                            <div style='background:#fff; border:1px solid #dce7e2; border-radius:10px; padding:12px 14px; margin-bottom:6px;'>
+                                <div style='display:flex; justify-content:space-between; align-items:center;'>
+                                    <div style='font-size:15px; color:#103d33;'>
+                                        <strong>{idx}. {ex_data['name']}</strong>
+                                    </div>
                                 </div>
                                 {box_series_reps}
                                 {notas_html}
                             </div>
                             """
                             st.markdown(card_html, unsafe_allow_html=True)
-
-                            if hay_video:
-                                st.markdown("<div style='border:1px solid #dce7e2; border-top:none; border-radius:0 0 10px 10px; padding:0 6px 6px 6px; margin-bottom:10px;'>", unsafe_allow_html=True)
-                                with st.expander("▶ Ver vídeo"):
+                            if tiene_video_valido(vid_url):
+                                with st.expander(f"▶ Ver vídeo: {ex_data['name']}", expanded=False):
                                     st.video(vid_url)
-                                st.markdown("</div>", unsafe_allow_html=True)
                     
                     st.divider()
                     st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Sesión Terminada</h3>", unsafe_allow_html=True)
