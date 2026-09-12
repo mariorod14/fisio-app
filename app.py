@@ -101,6 +101,66 @@ def tiene_video_valido(url):
     u = str(url).strip()
     return u.lower().startswith("http")
 
+# =============================================================
+# GUARDADO ATÓMICO (evita que varios pacientes se pisen los datos
+# si guardan casi a la vez, en vez de leer y reescribir la hoja entera)
+# =============================================================
+def _col_letter(n):
+    """Convierte un número de columna (1, 2, 3...) en su letra de Google Sheets (A, B, C...)."""
+    letters = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+def atomic_append_row_by_dict(worksheet_name, row_dict, default_columns):
+    """
+    Añade una fila nueva directamente a la hoja (operación atómica de Google Sheets),
+    sin leer ni reescribir el resto de filas. Así, si dos pacientes guardan casi al
+    mismo tiempo, ninguno pisa el dato del otro. Si por lo que sea no se puede
+    acceder así a la hoja, devuelve False para poder usar el guardado tradicional
+    como respaldo (nunca se pierde el dato, solo se pierde esta protección extra).
+    """
+    try:
+        gc = conn._instance
+        sh = gc.open_by_url(SHEET_URL)
+        ws = sh.worksheet(worksheet_name)
+        headers = ws.row_values(1)
+        if not headers:
+            headers = default_columns
+        values = [str(row_dict.get(h, "")) for h in headers]
+        ws.append_row(values, value_input_option="USER_ENTERED")
+        return True
+    except Exception:
+        return False
+
+def atomic_upsert_row_by_dict(worksheet_name, key_column, key_value, row_dict, default_columns):
+    """
+    Actualiza (o crea si no existe) una única fila identificada por key_column/key_value,
+    sin tocar el resto de la hoja. Pensado para datos que cambian a menudo por paciente
+    (como el progreso de una sesión), evitando que varios pacientes se pisen entre sí.
+    Devuelve False si no se puede, para recurrir al guardado tradicional como respaldo.
+    """
+    try:
+        gc = conn._instance
+        sh = gc.open_by_url(SHEET_URL)
+        ws = sh.worksheet(worksheet_name)
+        headers = ws.row_values(1)
+        if not headers:
+            headers = default_columns
+            ws.append_row(headers, value_input_option="USER_ENTERED")
+        values = [str(row_dict.get(h, "")) for h in headers]
+        col_idx = headers.index(key_column) + 1 if key_column in headers else 1
+        cell = ws.find(str(key_value), in_column=col_idx)
+        if cell:
+            rango = f"A{cell.row}:{_col_letter(len(headers))}{cell.row}"
+            ws.update(rango, [values])
+        else:
+            ws.append_row(values, value_input_option="USER_ENTERED")
+        return True
+    except Exception:
+        return False
+
 def normalize_access_code(value):
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
@@ -370,6 +430,8 @@ def save_programs_af(programs_list):
     conn.update(spreadsheet=SHEET_URL, worksheet="programas_af", data=pd.DataFrame(formatted, columns=program_columns))
     st.cache_data.clear()
 
+CHECKIN_COLUMNS = ["id", "planId", "date", "eva", "borg", "comment", "duration_min"]
+
 def get_checkins():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="checkins", ttl=600)
@@ -383,7 +445,8 @@ def get_checkins():
                 "date": clean_str(r.get("date", "")), 
                 "eva": clean_str(r.get("eva", "")), 
                 "borg": clean_str(r.get("borg", "")), 
-                "comment": clean_str(r.get("comment", ""))
+                "comment": clean_str(r.get("comment", "")),
+                "duration_min": clean_str(r.get("duration_min", ""))
             })
         return records
     except Exception:
@@ -394,18 +457,73 @@ def save_checkins(checkins_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return False
-    checkin_columns = ["id", "planId", "date", "eva", "borg", "comment"]
-    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins_list, columns=checkin_columns))
+    conn.update(spreadsheet=SHEET_URL, worksheet="checkins", data=pd.DataFrame(checkins_list, columns=CHECKIN_COLUMNS))
     st.cache_data.clear()
     return True
 
-def save_checkin_item(plan_id, date, eva, borg, comment):
+def save_checkin_item(plan_id, date, eva, borg, comment, duration_min=None):
     if st.session_state.gsheets_read_error:
         st.error("❌ Error de conexión temporal. Inténtalo de nuevo en unos segundos.")
         return
-    checkins_data = get_checkins()
-    checkins_data.append({"id": str(uuid.uuid4()), "planId": str(plan_id), "date": str(date), "eva": str(eva), "borg": str(borg), "comment": str(comment)})
-    save_checkins(checkins_data)
+    row_dict = {
+        "id": str(uuid.uuid4()), "planId": str(plan_id), "date": str(date),
+        "eva": str(eva), "borg": str(borg), "comment": str(comment),
+        "duration_min": "" if duration_min is None else str(duration_min)
+    }
+    # Guardado atómico (añade solo esta fila, sin tocar el resto) para que
+    # varios pacientes puedan enviar su reporte a la vez sin pisarse.
+    ok = atomic_append_row_by_dict("checkins", row_dict, CHECKIN_COLUMNS)
+    if ok:
+        st.cache_data.clear()
+    else:
+        # Respaldo: el método de guardado tradicional, por si el atómico falla.
+        checkins_data = get_checkins()
+        checkins_data.append(row_dict)
+        save_checkins(checkins_data)
+
+# =============================================================
+# PROGRESO EN VIVO DE LA SESIÓN CLÍNICA (cronómetro + checks de ejercicios)
+# Se guarda en una hoja aparte ("progreso_sesion") porque cambia muy a
+# menudo (cada vez que el paciente marca un ejercicio), así que conviene
+# no mezclarlo con la hoja de "sesiones" ni forzar una relectura de
+# todas las demás hojas cada vez que se actualiza.
+# =============================================================
+PROGRESO_COLUMNS = ["planId", "opened_at", "checked_exercises"]
+LIMITE_INACTIVIDAD_HORAS = 3
+
+def get_progreso_sesion(plan_id):
+    vacio = {"planId": str(plan_id), "opened_at": "", "checked_exercises": []}
+    try:
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="progreso_sesion", ttl=2)
+        if df.empty: return vacio
+        df = df.dropna(how="all")
+        for _, r in df.iterrows():
+            if clean_str(r.get("planId", "")) == str(plan_id):
+                raw_checks = clean_str(r.get("checked_exercises", "[]"))
+                try:
+                    checks = json.loads(raw_checks) if raw_checks.strip().startswith("[") else []
+                except Exception:
+                    checks = []
+                return {"planId": str(plan_id), "opened_at": clean_str(r.get("opened_at", "")), "checked_exercises": checks}
+        return vacio
+    except Exception:
+        return vacio
+
+def guardar_progreso_sesion(plan_id, opened_at, checked_exercises):
+    row_dict = {"planId": str(plan_id), "opened_at": opened_at, "checked_exercises": json.dumps(checked_exercises)}
+    ok = atomic_upsert_row_by_dict("progreso_sesion", "planId", str(plan_id), row_dict, PROGRESO_COLUMNS)
+    if not ok:
+        # Respaldo: si no se puede hacer el guardado atómico, se intenta el
+        # método tradicional. Si la hoja "progreso_sesion" todavía no existe,
+        # simplemente no se guarda (no rompe la app, solo no persiste).
+        try:
+            df = conn.read(spreadsheet=SHEET_URL, worksheet="progreso_sesion", ttl=0)
+            rows = [] if df.empty else df.to_dict("records")
+            rows = [r for r in rows if clean_str(r.get("planId", "")) != str(plan_id)]
+            rows.append(row_dict)
+            conn.update(spreadsheet=SHEET_URL, worksheet="progreso_sesion", data=pd.DataFrame(rows, columns=PROGRESO_COLUMNS))
+        except Exception:
+            pass
 
 # =============================================================
 # CARGA DE DATOS
@@ -1907,6 +2025,23 @@ else:
                     """
                     st.markdown(banner_html, unsafe_allow_html=True)
                     render_general_instructions_box(sesion_encontrada.get("generalInstructionIds", []))
+
+                    # --- Progreso de la sesión: hora de entrada (para el cronómetro) y
+                    # ejercicios marcados. Si no existe o han pasado más de 3 horas desde
+                    # que se abrió, se considera que es una visita nueva y se reinicia.
+                    ahora_dt = datetime.datetime.now()
+                    progreso = get_progreso_sesion(sesion_encontrada["id"])
+                    necesita_reset = True
+                    if progreso["opened_at"]:
+                        try:
+                            opened_dt = datetime.datetime.strptime(progreso["opened_at"], "%Y-%m-%d %H:%M:%S")
+                            if (ahora_dt - opened_dt).total_seconds() <= LIMITE_INACTIVIDAD_HORAS * 3600:
+                                necesita_reset = False
+                        except Exception:
+                            necesita_reset = True
+                    if necesita_reset:
+                        progreso = {"planId": sesion_encontrada["id"], "opened_at": ahora_dt.strftime("%Y-%m-%d %H:%M:%S"), "checked_exercises": []}
+                        guardar_progreso_sesion(sesion_encontrada["id"], progreso["opened_at"], progreso["checked_exercises"])
     
                     if not sesion_encontrada["exerciseIds"]:
                         st.info("No hay ejercicios para esta sesión.")
@@ -1922,6 +2057,7 @@ else:
                             reps = inst_data.get("reps", "-")
                             notes = inst_data.get("notes", "")
                             vid_url = ex_data.get("videoUrl", "").strip()
+                            marcado = str(ex_id) in [str(x) for x in progreso["checked_exercises"]]
 
                             box_series_reps = f"""
                             <div style='display:flex; gap:10px; margin-top:10px;'>
@@ -1944,9 +2080,19 @@ else:
                             """ if notes else ""
 
                             with st.container(border=True):
-                                col_txt, col_btn = st.columns([3, 1])
+                                col_num, col_txt, col_btn = st.columns([0.7, 2.3, 1])
+                                with col_num:
+                                    if st.button(str(idx), key=f"chk_{sesion_encontrada['id']}_{idx}", type=("primary" if marcado else "secondary"), use_container_width=True, help="Marcar como hecho"):
+                                        nuevos_checks = list(progreso["checked_exercises"])
+                                        if marcado:
+                                            nuevos_checks = [x for x in nuevos_checks if str(x) != str(ex_id)]
+                                        else:
+                                            nuevos_checks.append(str(ex_id))
+                                        guardar_progreso_sesion(sesion_encontrada["id"], progreso["opened_at"], nuevos_checks)
+                                        st.rerun()
                                 with col_txt:
-                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
+                                    estilo_nombre = "text-decoration:underline; text-decoration-color:#13765d; text-decoration-thickness:2px; color:#13765d;" if marcado else "color:#103d33;"
+                                    st.markdown(f"<div style='font-size:15px; padding-top:4px;'><strong style='{estilo_nombre}'>{ex_data['name']}</strong></div>", unsafe_allow_html=True)
                                 with col_btn:
                                     if tiene_video_valido(vid_url):
                                         if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=True):
@@ -1963,7 +2109,17 @@ else:
                         comentarios = st.text_area("¿Alguna molestia o comentario? (Opcional)")
                         
                         if st.form_submit_button("Enviar Reporte a mi Fisio", type="primary"):
-                            save_checkin_item(sesion_encontrada["id"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), eva, borg, comentarios)
+                            duracion_min = None
+                            if progreso["opened_at"]:
+                                try:
+                                    opened_dt = datetime.datetime.strptime(progreso["opened_at"], "%Y-%m-%d %H:%M:%S")
+                                    elapsed_sec = (datetime.datetime.now() - opened_dt).total_seconds()
+                                    if elapsed_sec <= LIMITE_INACTIVIDAD_HORAS * 3600:
+                                        duracion_min = round(elapsed_sec / 60, 1)
+                                except Exception:
+                                    duracion_min = None
+                            save_checkin_item(sesion_encontrada["id"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), eva, borg, comentarios, duracion_min)
+                            guardar_progreso_sesion(sesion_encontrada["id"], "", [])
                             st.success("¡Enviado con éxito! Tu fisio ya puede verlo.")
         else:
             st.error("PIN incorrecto o no encontrado.")
