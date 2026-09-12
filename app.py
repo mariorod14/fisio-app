@@ -246,6 +246,29 @@ def save_exercises(exercises_list):
     conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list, columns=exercise_columns))
     st.cache_data.clear()
 
+def get_general_instructions():
+    """Carga el listado maestro de indicaciones generales."""
+    try:
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="indicaciones_generales", ttl=600)
+        if df.empty: return []
+        df = df.dropna(how="all")
+        records = []
+        for _, r in df.iterrows():
+            text = clean_str(r.get("text", r.get("indicacion", "")))
+            if text:
+                records.append({"id": clean_str(r.get("id", "")), "text": text})
+        return records
+    except Exception:
+        st.session_state.gsheets_read_error = True
+        return []
+
+def save_general_instructions(instructions_list):
+    if st.session_state.gsheets_read_error:
+        st.error("❌ Guardado bloqueado por seguridad: hubo un error de conexión con Google Sheets.")
+        return
+    conn.update(spreadsheet=SHEET_URL, worksheet="indicaciones_generales", data=pd.DataFrame(instructions_list, columns=["id", "text"]))
+    st.cache_data.clear()
+
 def get_plans():
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="sesiones", ttl=600)
@@ -270,6 +293,7 @@ def get_plans():
                 "title": clean_str(r.get("title", "")),
                 "exerciseIds": ex_ids, 
                 "exerciseInstructions": cleaned_insts,
+                "generalInstructionIds": json.loads(r.get("generalInstructionIds", "[]")) if isinstance(r.get("generalInstructionIds", "[]"), str) and r.get("generalInstructionIds", "[]").startswith("[") else [],
                 "pin": clean_str(r.get("pin", "")),
                 "startDate": clean_str(r.get("startDate", "")),
                 "isActive": (clean_str(r.get("isActive", "")).lower() in ("true", "1", "si", "sí")) if clean_str(r.get("isActive", "")) else None
@@ -289,11 +313,12 @@ def save_plans(plans_list):
             "id": p["id"], "patientId": p["patientId"], "title": p["title"],
             "exerciseIds": json.dumps(p["exerciseIds"]), 
             "exerciseInstructions": json.dumps(p["exerciseInstructions"]),
+            "generalInstructionIds": json.dumps(p.get("generalInstructionIds", [])),
             "pin": p["pin"],
             "startDate": p.get("startDate", ""),
             "isActive": bool(p.get("isActive", True))
         })
-    plan_columns = ["id", "patientId", "title", "exerciseIds", "exerciseInstructions", "pin", "startDate", "isActive"]
+    plan_columns = ["id", "patientId", "title", "exerciseIds", "exerciseInstructions", "generalInstructionIds", "pin", "startDate", "isActive"]
     conn.update(spreadsheet=SHEET_URL, worksheet="sesiones", data=pd.DataFrame(formatted, columns=plan_columns))
     st.cache_data.clear()
 
@@ -316,6 +341,7 @@ def get_programs_af():
                 "title": clean_str(r.get("title", "")),
                 "frequency": clean_str(r.get("frequency", "")),
                 "duration": clean_str(r.get("duration", "")),
+                "generalInstructionIds": json.loads(r.get("generalInstructionIds", "[]")) if isinstance(r.get("generalInstructionIds", "[]"), str) and r.get("generalInstructionIds", "[]").startswith("[") else [],
                 "generalNote": clean_str(r.get("generalNote", "")),
                 "pin": clean_str(r.get("pin", "")),
                 "startDate": clean_str(r.get("startDate", "")),
@@ -335,11 +361,12 @@ def save_programs_af(programs_list):
         formatted.append({
             "id": p["id"], "patientId": p["patientId"], "title": p["title"],
             "frequency": p["frequency"], "duration": p["duration"],
+            "generalInstructionIds": json.dumps(p.get("generalInstructionIds", [])),
             "generalNote": p["generalNote"], "pin": p["pin"],
             "startDate": p.get("startDate", ""),
             "daysData": json.dumps(p["daysData"])
         })
-    program_columns = ["id", "patientId", "title", "frequency", "duration", "generalNote", "pin", "startDate", "daysData"]
+    program_columns = ["id", "patientId", "title", "frequency", "duration", "generalInstructionIds", "generalNote", "pin", "startDate", "daysData"]
     conn.update(spreadsheet=SHEET_URL, worksheet="programas_af", data=pd.DataFrame(formatted, columns=program_columns))
     st.cache_data.clear()
 
@@ -385,6 +412,7 @@ def save_checkin_item(plan_id, date, eva, borg, comment):
 # =============================================================
 patients = get_patients()
 exercises = get_exercises()
+general_instructions = get_general_instructions()
 plans = get_plans()
 programs_af = get_programs_af()
 checkins = get_checkins()
@@ -513,6 +541,21 @@ def get_exercise(e_id):
         if str(e["id"]) == str(e_id): return e
     return None
 
+def render_general_instructions_box(ids):
+    texts = []
+    for i_id in ids or []:
+        for item in general_instructions:
+            if str(item["id"]) == str(i_id):
+                texts.append(item["text"])
+                break
+    if not texts:
+        return
+    lis = "".join(f"<li style='margin-bottom:8px;'>{text}</li>" for text in texts)
+    st.markdown(f"""<div style='background:#fff; border:1px solid #dce7e2; border-left:5px solid #13765d; border-radius:14px; padding:18px 22px; margin:0 0 25px 0;'>
+<div style='color:#13765d; font-size:14px; font-weight:800; text-transform:uppercase; letter-spacing:.8px; margin-bottom:10px;'>📌 Indicaciones generales</div>
+<ul style='color:#17352e; margin:0; padding-left:22px; font-size:15px; line-height:1.55;'>{lis}</ul>
+</div>""", unsafe_allow_html=True)
+
 # =============================================================
 # MÓDULO 1: ÁREA CLÍNICA
 # =============================================================
@@ -553,9 +596,14 @@ if st.session_state.admin_mode:
             if e not in st.session_state[f"edit_ses_{pl_id}_ejs"]:
                 st.session_state[f"edit_ses_{pl_id}_ejs"].append(e)
 
+        opciones_ind = {item["text"]: item["id"] for item in general_instructions}
+        default_ind = [item["text"] for item in general_instructions if item["id"] in pl.get("generalInstructionIds", [])]
+        selected_ind = st.multiselect("**4. Indicaciones generales:**", options=list(opciones_ind.keys()), default=default_ind, key=f"edit_ses_ind_{pl_id}", placeholder="Selecciona las indicaciones para esta sesión...")
+        selected_general_instruction_ids = [opciones_ind[x] for x in selected_ind]
+
         instrucciones_dict = {}
         if st.session_state[f"edit_ses_{pl_id}_ejs"]:
-            st.markdown("**4. Configuración y Orden:**")
+            st.markdown("**5. Configuración y Orden:**")
             for idx, e_id in enumerate(st.session_state[f"edit_ses_{pl_id}_ejs"]):
                 ej_obj = get_exercise(e_id)
                 ej_name = ej_obj['name'] if ej_obj else "Ejercicio"
@@ -588,6 +636,7 @@ if st.session_state.admin_mode:
             pl["title"] = titulo_sesion
             pl["exerciseIds"] = st.session_state[f"edit_ses_{pl_id}_ejs"]
             pl["exerciseInstructions"] = instrucciones_dict
+            pl["generalInstructionIds"] = selected_general_instruction_ids
             save_plans(plans)
             st.session_state.editing_sesion_id = None
             st.rerun()
@@ -608,7 +657,11 @@ if st.session_state.admin_mode:
         c3, c4 = st.columns(2)
         af_frecuencia = c3.text_input("3. Frecuencia semanal:", value=pr["frequency"])
         af_duracion = c4.text_input("4. Duración por sesión:", value=pr["duration"])
-        af_nota = st.text_input("5. Nota general:", value=pr["generalNote"])
+        opciones_ind_af = {item["text"]: item["id"] for item in general_instructions}
+        default_ind_af = [item["text"] for item in general_instructions if item["id"] in pr.get("generalInstructionIds", [])]
+        selected_ind_af = st.multiselect("**5. Indicaciones generales:**", options=list(opciones_ind_af.keys()), default=default_ind_af, key=f"edit_af_ind_{pr_id}", placeholder="Selecciona las indicaciones para este programa...")
+        selected_general_instruction_ids_af = [opciones_ind_af[x] for x in selected_ind_af]
+        af_nota = st.text_input("6. Nota general:", value=pr["generalNote"])
         
         st.divider()
         st.markdown("### 📅 Días y Bloques")
@@ -737,6 +790,7 @@ if st.session_state.admin_mode:
             pr["title"] = af_titulo
             pr["frequency"] = af_frecuencia
             pr["duration"] = af_duracion
+            pr["generalInstructionIds"] = selected_general_instruction_ids_af
             pr["generalNote"] = af_nota
             pr["daysData"] = dias_construidos
             save_programs_af(programs_af)
@@ -764,6 +818,7 @@ if st.session_state.admin_mode:
     backup_data = {
         "pacientes": patients,
         "ejercicios": exercises,
+        "indicaciones_generales": general_instructions,
         "sesiones": plans,
         "programas_af": programs_af,
         "checkins": checkins
@@ -785,7 +840,7 @@ if st.session_state.admin_mode:
 
     if menu_seleccion == "📁 Archivo":
         st.markdown("<h1>📁 Base de Datos y Archivo</h1>", unsafe_allow_html=True)
-        tab_pac, tab_ej = st.tabs(["👥 Pacientes", "🎥 Ejercicios"])
+        tab_pac, tab_ej, tab_ind = st.tabs(["👥 Pacientes", "🎥 Ejercicios", "📌 Indicaciones generales"])
         
         with tab_pac:
             with st.expander("➕ Añadir Nuevo Paciente", expanded=False):
@@ -1061,6 +1116,45 @@ if st.session_state.admin_mode:
                         st.success("¡Base de datos de ejercicios actualizada!")
                         st.rerun()
 
+        with tab_ind:
+            st.markdown(f"<h3 style='margin-top:10px;'>📌 Banco de Indicaciones Generales (Total: {len(general_instructions)})</h3>", unsafe_allow_html=True)
+            st.caption("Crea aquí las indicaciones reutilizables que después podrás seleccionar en cada sesión clínica o programa de AF.")
+            with st.form("form_añadir_indicacion", clear_on_submit=True):
+                texto_ind = st.text_area("Nueva indicación", placeholder="Ej: Realiza los ejercicios con una técnica controlada y evita movimientos bruscos...", height=90, label_visibility="collapsed")
+                if st.form_submit_button("➕ Añadir indicación", type="primary", use_container_width=True):
+                    txt = texto_ind.strip()
+                    if not txt:
+                        st.warning("⚠️ La indicación no puede estar vacía.")
+                    elif any(x["text"].strip().lower() == txt.lower() for x in general_instructions):
+                        st.warning("⚠️ Esa indicación ya existe.")
+                    else:
+                        general_instructions.append({"id": str(uuid.uuid4()), "text": txt})
+                        save_general_instructions(general_instructions)
+                        st.rerun()
+            st.write("")
+            if not general_instructions:
+                st.info("Todavía no has creado ninguna indicación general.")
+            else:
+                for idx_ind, item in enumerate(general_instructions, 1):
+                    with st.container(border=True):
+                        st.text_area(f"Indicación {idx_ind}", value=item["text"], key=f"ind_text_{item['id']}", height=90)
+                if st.button("💾 Guardar cambios del listado", type="primary", use_container_width=True):
+                    updated = []
+                    seen = set()
+                    valid = True
+                    for item in general_instructions:
+                        txt = st.session_state.get(f"ind_text_{item['id']}", item["text"]).strip()
+                        if not txt or txt.lower() in seen:
+                            valid = False
+                            break
+                        seen.add(txt.lower())
+                        updated.append({"id": item["id"], "text": txt})
+                    if valid:
+                        general_instructions = updated
+                        save_general_instructions(general_instructions)
+                        st.success("¡Listado actualizado!")
+                        st.rerun()
+
     elif menu_seleccion == "🩺 Sesiones":
         st.markdown("<h1>🩺 Sesiones Clínicas</h1>", unsafe_allow_html=True)
         tab_ses_act, tab_crear_ses, tab_checkins, tab_seguimiento = st.tabs(["⚙️ Sesiones Activas", "📝 Crear Nueva Sesión", "📊 Check-ins", "📈 Seguimiento Pacientes"])
@@ -1153,11 +1247,15 @@ if st.session_state.admin_mode:
                     if e not in st.session_state.orden_ejs:
                         st.session_state.orden_ejs.append(e)
                 
+                opciones_ind_crear = {item["text"]: item["id"] for item in general_instructions}
+                selected_ind_crear = st.multiselect("**4. Indicaciones generales:**", options=list(opciones_ind_crear.keys()), key="crear_sesion_indicaciones", placeholder="Selecciona las indicaciones para esta sesión...")
+                selected_general_instruction_ids_crear = [opciones_ind_crear[x] for x in selected_ind_crear]
+
                 instrucciones_dict = {}
                 has_missing_videos = False
 
                 if st.session_state.orden_ejs:
-                    st.markdown("**4. Configuración y Orden:**")
+                    st.markdown("**5. Configuración y Orden:**")
                     
                     c_th, c_sh, c_rh, c_nh, c_x1, c_x2 = st.columns([4, 1.5, 1.5, 2.5, 0.6, 0.6])
                     c_th.caption("EJERCICIO")
@@ -1216,6 +1314,7 @@ if st.session_state.admin_mode:
                         plans.append({
                             "id": str(uuid.uuid4()), "patientId": paciente_sel, "title": titulo_sesion,
                             "exerciseIds": st.session_state.orden_ejs, "exerciseInstructions": instrucciones_dict,
+                            "generalInstructionIds": selected_general_instruction_ids_crear,
                             "pin": nuevo_pin, "startDate": datetime.date.today().strftime("%d/%m/%Y"), "isActive": True
                         })
                         save_plans(plans)
@@ -1396,7 +1495,11 @@ if st.session_state.admin_mode:
                 af_duracion = c_d1.text_input("4. Duración por sesión:", placeholder="Ej: 20-30")
                 c_d2.markdown("<div style='margin-top: 35px; color: #64756e; font-size: 15px;'>minutos/día</div>", unsafe_allow_html=True)
                 
-                af_nota_gen = st.text_input("5. Nota general explicativa:", value="*Los ejercicios con estrella ⭐ son los más recomendados para ti de cada bloque.")
+                opciones_ind_af_crear = {item["text"]: item["id"] for item in general_instructions}
+                selected_ind_af_crear = st.multiselect("**5. Indicaciones generales:**", options=list(opciones_ind_af_crear.keys()), key="crear_af_indicaciones", placeholder="Selecciona las indicaciones para este programa...")
+                selected_general_instruction_ids_af_crear = [opciones_ind_af_crear[x] for x in selected_ind_af_crear]
+
+                af_nota_gen = st.text_input("6. Nota general explicativa:", value="*Los ejercicios con estrella ⭐ son los más recomendados para ti de cada bloque.")
                 
                 st.divider()
                 st.markdown("### 📅 Días y Bloques de Ejercicios")
@@ -1541,6 +1644,7 @@ if st.session_state.admin_mode:
                                 "title": af_titulo,
                                 "frequency": frecuencia_guardar,
                                 "duration": duracion_guardar,
+                                "generalInstructionIds": selected_general_instruction_ids_af_crear,
                                 "generalNote": af_nota_gen,
                                 "pin": nuevo_pin_af,
                                 "startDate": datetime.date.today().strftime("%d/%m/%Y"),
@@ -1704,6 +1808,7 @@ else:
             </div>
             """
             st.markdown(banner_af, unsafe_allow_html=True)
+            render_general_instructions_box(pr.get("generalInstructionIds", []))
             
             if pr['generalNote']:
                 st.info(f"💡 {pr['generalNote']}")
@@ -1801,6 +1906,7 @@ else:
                     </div>
                     """
                     st.markdown(banner_html, unsafe_allow_html=True)
+                    render_general_instructions_box(sesion_encontrada.get("generalInstructionIds", []))
     
                     if not sesion_encontrada["exerciseIds"]:
                         st.info("No hay ejercicios para esta sesión.")
