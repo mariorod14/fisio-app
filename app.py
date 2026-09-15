@@ -2080,12 +2080,12 @@ else:
                             """ if notes else ""
 
                             with st.container(border=True):
-                                col_txt, col_btn = st.columns([3.3, 0.9])
+                                col_txt, col_btn = st.columns([4, 1])
                                 with col_txt:
                                     st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
                                 with col_btn:
                                     if tiene_video_valido(vid_url):
-                                        if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=True):
+                                        if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=False):
                                             modal_ver_video(vid_url, ex_data['name'])
                                 
                                 st.markdown(f"<div style='margin-bottom:8px;'>{box_series_reps}{notas_html}</div>", unsafe_allow_html=True)
