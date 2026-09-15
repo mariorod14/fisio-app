@@ -2035,22 +2035,28 @@ else:
                     st.markdown(banner_html, unsafe_allow_html=True)
                     render_general_instructions_box(sesion_encontrada.get("generalInstructionIds", []))
 
-                    # --- Progreso de la sesión: hora de entrada (para el cronómetro) y
-                    # ejercicios marcados. Si no existe o han pasado más de 3 horas desde
-                    # que se abrió, se considera que es una visita nueva y se reinicia.
-                    ahora_dt = datetime.datetime.now()
-                    progreso = get_progreso_sesion(sesion_encontrada["id"])
-                    necesita_reset = True
-                    if progreso["opened_at"]:
-                        try:
-                            opened_dt = datetime.datetime.strptime(progreso["opened_at"], "%Y-%m-%d %H:%M:%S")
-                            if (ahora_dt - opened_dt).total_seconds() <= LIMITE_INACTIVIDAD_HORAS * 3600:
-                                necesita_reset = False
-                        except Exception:
-                            necesita_reset = True
-                    if necesita_reset:
-                        progreso = {"planId": sesion_encontrada["id"], "opened_at": ahora_dt.strftime("%Y-%m-%d %H:%M:%S"), "checked_exercises": []}
-                        guardar_progreso_sesion(sesion_encontrada["id"], progreso["opened_at"], progreso["checked_exercises"])
+                    # --- Progreso de la sesión: hora de entrada (para el cronómetro).
+                    # Esto solo se consulta/guarda en Google Sheets UNA VEZ por visita
+                    # (se queda en memoria de esta sesión de navegador después), para no
+                    # tener que leer la hoja cada vez que el paciente pulsa cualquier cosa
+                    # (ver vídeo, aceptar el aviso...), que era lo que lo ralentizaba todo.
+                    progreso_cache_key = f"progreso_cache_{sesion_encontrada['id']}"
+                    if progreso_cache_key not in st.session_state:
+                        ahora_dt = datetime.datetime.now()
+                        progreso = get_progreso_sesion(sesion_encontrada["id"])
+                        necesita_reset = True
+                        if progreso["opened_at"]:
+                            try:
+                                opened_dt = datetime.datetime.strptime(progreso["opened_at"], "%Y-%m-%d %H:%M:%S")
+                                if (ahora_dt - opened_dt).total_seconds() <= LIMITE_INACTIVIDAD_HORAS * 3600:
+                                    necesita_reset = False
+                            except Exception:
+                                necesita_reset = True
+                        if necesita_reset:
+                            progreso = {"planId": sesion_encontrada["id"], "opened_at": ahora_dt.strftime("%Y-%m-%d %H:%M:%S"), "checked_exercises": []}
+                            guardar_progreso_sesion(sesion_encontrada["id"], progreso["opened_at"], progreso["checked_exercises"])
+                        st.session_state[progreso_cache_key] = progreso
+                    progreso = st.session_state[progreso_cache_key]
     
                     if not sesion_encontrada["exerciseIds"]:
                         st.info("No hay ejercicios para esta sesión.")
@@ -2118,6 +2124,7 @@ else:
                                     duracion_min = None
                             save_checkin_item(sesion_encontrada["id"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), eva, borg, comentarios, duracion_min)
                             guardar_progreso_sesion(sesion_encontrada["id"], "", [])
+                            st.session_state.pop(progreso_cache_key, None)
                             st.success("¡Enviado con éxito! Tu fisio ya puede verlo.")
         else:
             st.error("PIN incorrecto o no encontrado.")
