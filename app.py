@@ -122,6 +122,26 @@ def _col_letter(n):
         letters = chr(65 + rem) + letters
     return letters
 
+@st.cache_resource
+def get_ws(worksheet_name):
+    """
+    Devuelve (y reutiliza) el objeto de la hoja de Google Sheets. Abrir el documento
+    entero (open_by_url) es la parte más lenta de todas, así que solo se hace una
+    vez por hoja mientras la app esté funcionando, no cada vez que se guarda algo.
+    """
+    gc = conn._instance
+    sh = gc.open_by_url(SHEET_URL)
+    return sh.worksheet(worksheet_name)
+
+@st.cache_data(ttl=300)
+def get_ws_headers(worksheet_name, default_columns_tuple):
+    try:
+        ws = get_ws(worksheet_name)
+        headers = ws.row_values(1)
+        return headers if headers else list(default_columns_tuple)
+    except Exception:
+        return list(default_columns_tuple)
+
 def atomic_append_row_by_dict(worksheet_name, row_dict, default_columns):
     """
     Añade una fila nueva directamente a la hoja (operación atómica de Google Sheets),
@@ -131,13 +151,9 @@ def atomic_append_row_by_dict(worksheet_name, row_dict, default_columns):
     como respaldo (nunca se pierde el dato, solo se pierde esta protección extra).
     """
     try:
-        gc = conn._instance
-        sh = gc.open_by_url(SHEET_URL)
-        ws = sh.worksheet(worksheet_name)
-        headers = ws.row_values(1)
-        if not headers:
-            headers = default_columns
+        headers = get_ws_headers(worksheet_name, tuple(default_columns))
         values = [str(row_dict.get(h, "")) for h in headers]
+        ws = get_ws(worksheet_name)
         ws.append_row(values, value_input_option="USER_ENTERED")
         return True
     except Exception:
@@ -151,18 +167,24 @@ def atomic_upsert_row_by_dict(worksheet_name, key_column, key_value, row_dict, d
     Devuelve False si no se puede, para recurrir al guardado tradicional como respaldo.
     """
     try:
-        gc = conn._instance
-        sh = gc.open_by_url(SHEET_URL)
-        ws = sh.worksheet(worksheet_name)
-        headers = ws.row_values(1)
-        if not headers:
-            headers = default_columns
-            ws.append_row(headers, value_input_option="USER_ENTERED")
+        headers = get_ws_headers(worksheet_name, tuple(default_columns))
         values = [str(row_dict.get(h, "")) for h in headers]
-        col_idx = headers.index(key_column) + 1 if key_column in headers else 1
-        cell = ws.find(str(key_value), in_column=col_idx)
-        if cell:
-            rango = f"A{cell.row}:{_col_letter(len(headers))}{cell.row}"
+        ws = get_ws(worksheet_name)
+
+        # Para encontrar la fila usamos la lectura ya cacheada (rápida) en vez de
+        # buscarla directamente en Google Sheets con ws.find() (mucho más lento).
+        fila_encontrada = None
+        try:
+            df_actual = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=2)
+            if not df_actual.empty and key_column in df_actual.columns:
+                coincidencias = df_actual.index[df_actual[key_column].astype(str) == str(key_value)].tolist()
+                if coincidencias:
+                    fila_encontrada = coincidencias[0] + 2  # +1 por la cabecera, +1 porque las filas empiezan en 1
+        except Exception:
+            fila_encontrada = None
+
+        if fila_encontrada:
+            rango = f"A{fila_encontrada}:{_col_letter(len(headers))}{fila_encontrada}"
             ws.update(rango, [values])
         else:
             ws.append_row(values, value_input_option="USER_ENTERED")
