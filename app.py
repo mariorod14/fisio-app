@@ -2057,7 +2057,6 @@ else:
                             reps = inst_data.get("reps", "-")
                             notes = inst_data.get("notes", "")
                             vid_url = ex_data.get("videoUrl", "").strip()
-                            marcado = str(ex_id) in [str(x) for x in progreso["checked_exercises"]]
 
                             box_series_reps = f"""
                             <div style='display:flex; gap:10px; margin-top:10px;'>
@@ -2080,19 +2079,9 @@ else:
                             """ if notes else ""
 
                             with st.container(border=True):
-                                col_num, col_txt, col_btn = st.columns([0.7, 2.3, 1])
-                                with col_num:
-                                    if st.button(str(idx), key=f"chk_{sesion_encontrada['id']}_{idx}", type=("primary" if marcado else "secondary"), use_container_width=True, help="Marcar como hecho"):
-                                        nuevos_checks = list(progreso["checked_exercises"])
-                                        if marcado:
-                                            nuevos_checks = [x for x in nuevos_checks if str(x) != str(ex_id)]
-                                        else:
-                                            nuevos_checks.append(str(ex_id))
-                                        guardar_progreso_sesion(sesion_encontrada["id"], progreso["opened_at"], nuevos_checks)
-                                        st.rerun()
+                                col_txt, col_btn = st.columns([3, 1])
                                 with col_txt:
-                                    estilo_nombre = "text-decoration:underline; text-decoration-color:#13765d; text-decoration-thickness:2px; color:#13765d;" if marcado else "color:#103d33;"
-                                    st.markdown(f"<div style='font-size:15px; padding-top:4px;'><strong style='{estilo_nombre}'>{ex_data['name']}</strong></div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
                                 with col_btn:
                                     if tiene_video_valido(vid_url):
                                         if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=True):
