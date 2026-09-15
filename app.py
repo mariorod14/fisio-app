@@ -48,7 +48,8 @@ estilo_css = """
     }
     .stApp { background-color: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; }
     h1, h2, h3, h4, p, span, label { color: var(--ink) !important; }
-    button[data-testid="baseButton-primary"] { background-color: var(--green) !important; color: white !important; border-radius: 9px !important; }
+    button[data-testid="baseButton-primary"], button[data-testid="stBaseButton-primary"], .stButton > button[kind="primary"] { background-color: var(--green) !important; color: white !important; border-color: var(--green) !important; border-radius: 9px !important; }
+    .stButton > button { padding: 0.35rem 0.6rem !important; font-size: 13px !important; }
     .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"], .stSelectbox div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
     [data-testid="stForm"] { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: white;}
@@ -2059,7 +2060,7 @@ else:
                             vid_url = ex_data.get("videoUrl", "").strip()
 
                             box_series_reps = f"""
-                            <div style='display:flex; gap:10px; margin-top:10px;'>
+                            <div style='display:flex; gap:10px; margin-top:4px;'>
                                 <div style='flex:1; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 10px; text-align:center;'>
                                     <div style='font-size:11px; color:#13765d; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;'>Series</div>
                                     <div style='font-size:18px; color:#103d33; font-weight:800; margin-top:2px;'>{series}</div>
@@ -2079,7 +2080,7 @@ else:
                             """ if notes else ""
 
                             with st.container(border=True):
-                                col_txt, col_btn = st.columns([3, 1])
+                                col_txt, col_btn = st.columns([3.3, 0.9])
                                 with col_txt:
                                     st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
                                 with col_btn:
@@ -2087,7 +2088,7 @@ else:
                                         if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=True):
                                             modal_ver_video(vid_url, ex_data['name'])
                                 
-                                st.markdown(box_series_reps + notas_html, unsafe_allow_html=True)
+                                st.markdown(f"<div style='margin-bottom:8px;'>{box_series_reps}{notas_html}</div>", unsafe_allow_html=True)
                     
                     st.divider()
                     st.markdown("<h3 style='margin-top:20px; color:#103d33 !important;'>✅ Sesión Terminada</h3>", unsafe_allow_html=True)
