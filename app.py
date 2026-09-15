@@ -51,9 +51,10 @@ estilo_css = """
     button[data-testid="baseButton-primary"], button[data-testid="stBaseButton-primary"], .stButton > button[kind="primary"] { background-color: var(--green) !important; color: white !important; border-color: var(--green) !important; border-radius: 9px !important; }
     .stButton > button { padding: 0.35rem 0.9rem !important; font-size: 13px !important; }
     @media (max-width: 640px) {
-        div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; align-items: center !important; }
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] { width: unset !important; flex: 1 1 auto !important; min-width: 0 !important; }
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has(.stButton) { flex: 0 0 auto !important; }
+        div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; align-items: center !important; width: 100% !important; }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] { width: auto !important; min-width: 0 !important; }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child { flex: 1 1 auto !important; }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:last-child { flex: 0 0 auto !important; }
     }
     .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"], .stSelectbox div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
