@@ -1964,6 +1964,7 @@ else:
         with col_exit2:
             if st.button("🚪 Cambiar código", key="exit_pin_btn"):
                 st.session_state.logged_pin = None
+                st.query_params.clear()
                 st.rerun()
 
         if programa_af_encontrado:
@@ -2172,4 +2173,5 @@ else:
             st.error("PIN incorrecto o no encontrado.")
             if st.button("Intentar de nuevo"):
                 st.session_state.logged_pin = None
+                st.query_params.clear()
                 st.rerun()
