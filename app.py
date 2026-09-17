@@ -580,110 +580,129 @@ def get_patient_name(p_id):
 
 def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
     """
-    Calcula el estado del semáforo de adherencia para un paciente,
-    en base a sus check-ins (dolor EVA, fatiga Borg, comentarios,
-    recencia) y su fecha de próxima revisión.
+    Calcula el estado del semáforo de adherencia para un paciente, a partir de una
+    media ponderada de 5 variables (Tiempo, EVA, Subida de EVA, Borg y Frecuencia
+    semanal). El EVA y el Tiempo tienen más peso que el resto. Aunque el resultado
+    general salga verde, cualquier variable que esté en rojo se sigue mostrando en
+    los motivos para que el fisio pueda revisarla igualmente.
     """
     p_id = str(paciente["id"])
-
     planes_paciente = [str(p["id"]) for p in todos_los_planes if str(p["patientId"]) == p_id]
     checkins_pac = [c for c in todos_los_checkins if str(c.get("planId")) in planes_paciente]
 
-    motivos = []
-    estado = "VERDE"  # Por defecto
-
-    # Parsear la próxima revisión
-    rev_date_str = paciente.get("review_date", "")
-    dias_revision = None
-    if rev_date_str:
+    def parse_date(c):
         try:
-            r_date = datetime.datetime.strptime(rev_date_str, "%Y-%m-%d").date()
-            dias_revision = (r_date - datetime.date.today()).days
-        except ValueError:
-            pass
-
-    # Analizar check-ins si existen
-    if checkins_pac:
-        def parse_date(c):
-            try:
-                return datetime.datetime.strptime(c["date"], "%Y-%m-%d %H:%M")
-            except Exception:
-                return datetime.datetime.min
-
-        checkins_ordenados = sorted(checkins_pac, key=parse_date, reverse=True)
-        ultimo_checkin = checkins_ordenados[0]
-
-        try:
-            eva_act = float(ultimo_checkin.get("eva", 0))
-            borg_act = float(ultimo_checkin.get("borg", 0))
-            fecha_ult = parse_date(ultimo_checkin)
-            dias_sin_checkin = (datetime.datetime.now() - fecha_ult).days
-        except (ValueError, TypeError):
-            eva_act, borg_act, dias_sin_checkin = 0, 0, 999
-
-        # Delta de EVA respecto al check-in anterior
-        delta_eva = 0
-        if len(checkins_ordenados) > 1:
-            try:
-                eva_prev = float(checkins_ordenados[1].get("eva", 0))
-                delta_eva = eva_act - eva_prev
-            except (ValueError, TypeError):
-                delta_eva = 0
-
-        # --- REGLAS ROJAS ---
-        if eva_act >= 7:
-            estado = "ROJO"
-            motivos.append(f"Dolor muy alto (EVA {int(eva_act)}/10)")
-        if delta_eva >= 3:
-            estado = "ROJO"
-            motivos.append(f"Pico de dolor (subida de +{int(delta_eva)} puntos de EVA)")
-        if borg_act >= 8:
-            estado = "ROJO"
-            motivos.append(f"Fatiga extrema (Borg {int(borg_act)}/10)")
-        if dias_sin_checkin > 14 and planes_paciente:
-            estado = "ROJO"
-            motivos.append(f"Sin registros desde hace {dias_sin_checkin} días")
-
-        # --- REGLAS AMARILLAS (solo si no es ya rojo) ---
-        if estado != "ROJO":
-            if 4 <= eva_act <= 6:
-                estado = "AMARILLO"
-                motivos.append(f"Dolor moderado (EVA {int(eva_act)}/10)")
-            if 6 <= borg_act <= 7:
-                estado = "AMARILLO"
-                motivos.append(f"Fatiga moderada (Borg {int(borg_act)}/10)")
-            if 7 <= dias_sin_checkin <= 14 and planes_paciente:
-                estado = "AMARILLO"
-                motivos.append(f"Sin registros desde hace {dias_sin_checkin} días")
-            if ultimo_checkin.get("comment", "").strip():
-                estado = "AMARILLO"
-                motivos.append("Dejó un comentario en el último reporte")
-    else:
-        # No tiene check-ins registrados todavía
-        if planes_paciente:
-            estado = "AMARILLO"
-            motivos.append("Tiene sesión asignada pero aún no ha registrado ningún reporte")
-
-    # --- REGLAS POR FECHA DE REVISIÓN (pueden agravar el estado) ---
-    if dias_revision is not None:
-        if dias_revision < 0:
-            estado = "ROJO"
-            motivos.append(f"Revisión vencida hace {abs(dias_revision)} día(s)")
-        elif 0 <= dias_revision <= 3 and estado != "ROJO":
-            estado = "AMARILLO"
-            motivos.append(f"Próxima revisión en {dias_revision} día(s)")
+            return datetime.datetime.strptime(c["date"], "%Y-%m-%d %H:%M")
+        except Exception:
+            return datetime.datetime.min
 
     iconos = {"ROJO": "🔴", "AMARILLO": "🟡", "VERDE": "🟢"}
     colores_bg = {"ROJO": "#fdecec", "AMARILLO": "#fff8e1", "VERDE": "#e9f6f0"}
     colores_txt = {"ROJO": "#aa3838", "AMARILLO": "#f57f17", "VERDE": "#13765d"}
 
-    return {
-        "estado": estado,
-        "icono": iconos[estado],
-        "motivos": motivos,
-        "bg_color": colores_bg[estado],
-        "text_color": colores_txt[estado]
-    }
+    def resultado(estado, motivos):
+        return {"estado": estado, "icono": iconos[estado], "motivos": motivos,
+                "bg_color": colores_bg[estado], "text_color": colores_txt[estado]}
+
+    # Sin al menos 3 reportes, no hay datos suficientes para valorar ninguna
+    # variable de forma fiable (ni siquiera EVA/Tiempo, para que el semáforo
+    # arranque con criterio desde el principio).
+    if len(checkins_pac) < 3:
+        if planes_paciente:
+            return resultado("AMARILLO", [f"Necesita al menos 3 reportes para calcular su adherencia (lleva {len(checkins_pac)})"])
+        return resultado("VERDE", [])
+
+    checkins_ordenados = sorted(checkins_pac, key=parse_date, reverse=True)
+    ahora = datetime.datetime.now()
+    checkins_7d = [c for c in checkins_ordenados if (ahora - parse_date(c)).days <= 7]
+
+    motivos = []
+    puntos_ponderados = 0.0
+    peso_total = 0.0
+
+    def registrar(score, peso, motivo_si_no_verde=None):
+        nonlocal puntos_ponderados, peso_total
+        puntos_ponderados += score * peso
+        peso_total += peso
+        if score < 2 and motivo_si_no_verde:
+            motivos.append(motivo_si_no_verde)
+
+    # --- 1. TIEMPO (duración de sesión, últimos 7 días) — peso alto ---
+    duraciones_7d = []
+    for c in checkins_7d:
+        try:
+            if str(c.get("duration_min", "")).strip() != "":
+                duraciones_7d.append(float(c["duration_min"]))
+        except (ValueError, TypeError):
+            pass
+    if duraciones_7d:
+        if any(d < 30 for d in duraciones_7d):
+            registrar(0, 2, "Alguna sesión de esta semana duró menos de 30 min")
+        elif any(d <= 45 for d in duraciones_7d):
+            registrar(1, 2, "Alguna sesión de esta semana duró entre 30 y 45 min")
+        else:
+            registrar(2, 2)
+
+    # --- 2. EVA (nivel de dolor, últimos 7 días) — peso alto ---
+    evas_7d = []
+    for c in checkins_7d:
+        try:
+            evas_7d.append(float(c.get("eva", 0)))
+        except (ValueError, TypeError):
+            pass
+    if evas_7d:
+        peor_eva = max(evas_7d)
+        if peor_eva >= 7:
+            registrar(0, 2, f"Dolor alto en alguna sesión de esta semana (EVA {int(peor_eva)}/10)")
+        elif peor_eva >= 4:
+            registrar(1, 2, f"Dolor moderado en alguna sesión de esta semana (EVA {int(peor_eva)}/10)")
+        else:
+            registrar(2, 2)
+
+    # --- 3. SUBIDA DE EVA (última sesión vs. penúltima) — peso normal ---
+    try:
+        eva_ultima = float(checkins_ordenados[0].get("eva", 0))
+        eva_penultima = float(checkins_ordenados[1].get("eva", 0))
+        delta_eva = eva_ultima - eva_penultima
+        if delta_eva >= 2:
+            registrar(0, 1, f"Subida de dolor entre las dos últimas sesiones (+{int(delta_eva)} puntos de EVA)")
+        else:
+            registrar(2, 1)
+    except (ValueError, TypeError, IndexError):
+        pass
+
+    # --- 4. BORG (3 sesiones seguidas con Borg ≥ 8) — peso normal ---
+    try:
+        ultimas_3 = checkins_ordenados[:3]
+        borgs_ultimas_3 = [float(c.get("borg", 0)) for c in ultimas_3]
+        if len(borgs_ultimas_3) == 3 and all(b >= 8 for b in borgs_ultimas_3):
+            registrar(0, 1, "Fatiga muy alta (Borg ≥8) en las últimas 3 sesiones seguidas")
+        else:
+            registrar(2, 1)
+    except (ValueError, TypeError):
+        pass
+
+    # --- 5. FRECUENCIA (sesiones en los últimos 7 días, rodante) — peso normal ---
+    n_checkins_7d = len(checkins_7d)
+    if n_checkins_7d < 2:
+        registrar(0, 1, f"Menos de 2 sesiones esta semana ({n_checkins_7d})")
+    elif n_checkins_7d == 2:
+        registrar(1, 1, "Solo 2 sesiones esta semana")
+    else:
+        registrar(2, 1)
+
+    if peso_total == 0:
+        return resultado("AMARILLO", ["No hay datos suficientes de esta semana para calcular la adherencia"])
+
+    media = puntos_ponderados / peso_total
+    if media >= 1.5:
+        estado = "VERDE"
+    elif media >= 0.75:
+        estado = "AMARILLO"
+    else:
+        estado = "ROJO"
+
+    return resultado(estado, motivos)
 
 def get_exercise(e_id):
     for e in exercises:
@@ -2061,7 +2080,8 @@ else:
                     # Esto solo se consulta/guarda en Google Sheets UNA VEZ por visita
                     # (se queda en memoria de esta sesión de navegador después), para no
                     # tener que leer la hoja cada vez que el paciente pulsa cualquier cosa
-                    # (ver vídeo, aceptar el aviso...), que era lo que lo ralentizaba todo.
+                    # (ver vídeo, aceptar el aviso...). Sobrevive a que el paciente cierre
+                    # la app o apague el móvil a mitad de sesión.
                     progreso_cache_key = f"progreso_cache_{sesion_encontrada['id']}"
                     if progreso_cache_key not in st.session_state:
                         ahora_dt = datetime.datetime.now()
