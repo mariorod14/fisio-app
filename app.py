@@ -59,6 +59,23 @@ estilo_css = """
         div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-v_ses_"]) > div:first-child { flex: 1 1 auto !important; width: auto !important; }
         div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-v_ses_"]) > div:last-child { flex: 0 0 auto !important; width: auto !important; }
     }
+    /* Comentario asociado al ejercicio: apariencia de bocadillo de cómic */
+    div[class*="st-key-default_note_"] textarea {
+        border: 2px solid #13765d !important;
+        border-radius: 18px 18px 18px 5px !important;
+        background: #fffef7 !important;
+        padding: 14px 16px !important;
+        box-shadow: 0 4px 12px rgba(16, 61, 51, 0.10) !important;
+        min-height: 110px !important;
+        position: relative !important;
+    }
+    div[class*="st-key-default_note_"] textarea:focus {
+        border-color: #103d33 !important;
+        box-shadow: 0 0 0 2px rgba(19, 118, 93, 0.12), 0 5px 14px rgba(16, 61, 51, 0.12) !important;
+    }
+    div[class*="st-key-default_note_"] {
+        position: relative !important;
+    }
     .stTextInput input, .stTextArea textarea, .stMultiSelect div[data-baseweb="select"], .stSelectbox div[data-baseweb="select"] { border: 1px solid var(--line) !important; border-radius: 9px !important; }
     [data-testid="stExpander"] { background: #fff !important; border: 1px solid var(--line) !important; border-radius: 15px !important; }
     [data-testid="stForm"] { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: white;}
@@ -1267,14 +1284,37 @@ if st.session_state.admin_mode:
                                 with name_col:
                                     n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
                                 with comment_col:
-                                    with st.popover("💬", help="Comentario predeterminado de este ejercicio"):
-                                        st.caption("Comentario asociado al ejercicio")
+                                    with st.popover("📝", help="Comentario predeterminado de este ejercicio"):
+                                        st.markdown("""
+                                        <div style="
+                                            position:relative;
+                                            background:#fffef7;
+                                            border:2px solid #13765d;
+                                            border-radius:18px 18px 18px 6px;
+                                            padding:12px 16px;
+                                            margin:2px 0 10px 0;
+                                            color:#103d33;
+                                            font-size:13px;
+                                            line-height:1.45;
+                                            box-shadow:0 4px 12px rgba(16,61,51,.08);
+                                        ">
+                                            <div style="font-weight:800; color:#13765d; margin-bottom:4px;">📝 Comentario asociado</div>
+                                            <div>Este comentario aparecerá automáticamente en <strong>Notas</strong> cuando añadas el ejercicio a una sesión o programa.</div>
+                                        </div>
+                                        <div style="
+                                            width:0; height:0;
+                                            border-top:10px solid #13765d;
+                                            border-right:10px solid transparent;
+                                            margin:-10px 0 8px 16px;
+                                        "></div>
+                                        """, unsafe_allow_html=True)
                                         st.text_area(
-                                            "Este texto aparecerá automáticamente en 'Notas' al añadir el ejercicio a una sesión o programa.",
+                                            "Comentario",
                                             value=e.get("defaultNote", ""),
                                             key=f"default_note_{eid}",
-                                            height=130,
-                                            placeholder="Ej: Mantén la rodilla alineada con el segundo dedo del pie..."
+                                            height=120,
+                                            placeholder="Ej: Mantén la rodilla alineada con el segundo dedo del pie...",
+                                            label_visibility="collapsed"
                                         )
                             with c_alt:
                                 pn = st.text_input("pn", value=e.get("patientName", ""), key=f"pn_{eid}", label_visibility="collapsed", placeholder="(igual que el nombre)")
@@ -2228,4 +2268,3 @@ else:
                 st.session_state.logged_pin = None
                 st.query_params.clear()
                 st.rerun()
-                
