@@ -9,6 +9,7 @@ import uuid
 import json
 from urllib.parse import urlparse, parse_qs
 import streamlit.components.v1 as components
+from html import escape
 
 # Configuración básica
 st.set_page_config(page_title="FisioSesión", layout="wide", initial_sidebar_state="expanded")
@@ -323,7 +324,8 @@ def get_exercises():
                 "name": clean_str(r.get("name", "")), 
                 "patientName": clean_str(r.get("patientName", "")),
                 "videoUrl": clean_str(r.get("videoUrl", "")), 
-                "category": clean_str(r.get("category", ""))
+                "category": clean_str(r.get("category", "")),
+                "defaultNote": clean_str(r.get("defaultNote", ""))
             })
         return records
     except Exception:
@@ -334,7 +336,7 @@ def save_exercises(exercises_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return
-    exercise_columns = ["id", "name", "patientName", "videoUrl", "category"]
+    exercise_columns = ["id", "name", "patientName", "videoUrl", "category", "defaultNote"]
     conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list, columns=exercise_columns))
     st.cache_data.clear()
 
@@ -569,6 +571,8 @@ def guardar_progreso_sesion(plan_id, opened_at, checked_exercises):
 # =============================================================
 patients = get_patients()
 exercises = get_exercises()
+for _exercise in exercises:
+    _exercise.setdefault("defaultNote", "")
 general_instructions = get_general_instructions()
 plans = get_plans()
 programs_af = get_programs_af()
@@ -740,6 +744,7 @@ if st.session_state.admin_mode:
     @st.dialog("✏️ Editar Sesión Clínica", width="large")
     def modal_editar_sesion(pl):
         pl_id = pl["id"]
+        original_session_exercise_ids = set(pl.get("exerciseIds", []))
         
         pac_idx = 0
         patient_ids = [p["id"] for p in patients]
@@ -792,8 +797,11 @@ if st.session_state.admin_mode:
                     s = st.text_input("S", value=prev_inst.get("series", ""), key=f"es_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Series")
                 with c_r: 
                     r = st.text_input("R", value=prev_inst.get("reps", ""), key=f"er_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Reps")
-                with c_n: 
-                    n = st.text_input("N", value=prev_inst.get("notes", ""), key=f"en_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Notas")
+                with c_n:
+                    existing_note = prev_inst.get("notes", "")
+                    if not existing_note and e_id not in original_session_exercise_ids:
+                        existing_note = ej_obj.get("defaultNote", "") if ej_obj else ""
+                    n = st.text_input("N", value=existing_note, key=f"en_{pl_id}_{e_id}", label_visibility="collapsed", placeholder="Notas")
                 with c_up:
                     if st.button("⬆️", key=f"eup_{pl_id}_{e_id}") and idx > 0:
                         st.session_state[f"edit_ses_{pl_id}_ejs"][idx-1], st.session_state[f"edit_ses_{pl_id}_ejs"][idx] = st.session_state[f"edit_ses_{pl_id}_ejs"][idx], st.session_state[f"edit_ses_{pl_id}_ejs"][idx-1]
@@ -912,7 +920,7 @@ if st.session_state.admin_mode:
                         def_prio = False
                         def_s = ""
                         def_r = ""
-                        def_n = ""
+                        def_n = ej_obj.get("defaultNote", "") if ej_obj else ""
                         if old_block:
                             for ex_old in old_block.get("exercises", []):
                                 if ex_old.get("exerciseId") == eid:
@@ -1217,7 +1225,8 @@ if st.session_state.admin_mode:
                             "name": new_n.strip(),
                             "patientName": new_pn.strip(),
                             "videoUrl": new_u.strip(),
-                            "category": new_c
+                            "category": new_c,
+                            "defaultNote": ""
                         })
                         save_exercises(exercises)
                         st.success("¡Ejercicio añadido a la base de datos!")
@@ -1227,9 +1236,10 @@ if st.session_state.admin_mode:
             
             st.write("")
             
-            with st.form("form_editar_ejercicios"):
-                btn_save = st.form_submit_button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True)
-                
+            # Editor de ejercicios. Es un contenedor normal para poder abrir un
+            # bocadillo 💬 junto a cada nombre sin crear una nueva columna de datos.
+            with st.container():
+                btn_save = st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True, key="save_all_exercises")
                 st.markdown("<hr style='margin: 10px 0 20px 0;'>", unsafe_allow_html=True)
                 
                 nuevos_datos = {}
@@ -1252,7 +1262,20 @@ if st.session_state.admin_mode:
                             eid = e["id"]
                             c1, c_alt, c2, c3, c4 = st.columns([3, 2.3, 3, 2, 1])
                             with c1:
-                                n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
+                                # El bocadillo queda visualmente pegado al nombre.
+                                name_col, comment_col = st.columns([8.5, 1.5], gap="small")
+                                with name_col:
+                                    n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
+                                with comment_col:
+                                    with st.popover("💬", help="Comentario predeterminado de este ejercicio"):
+                                        st.caption("Comentario asociado al ejercicio")
+                                        st.text_area(
+                                            "Este texto aparecerá automáticamente en 'Notas' al añadir el ejercicio a una sesión o programa.",
+                                            value=e.get("defaultNote", ""),
+                                            key=f"default_note_{eid}",
+                                            height=130,
+                                            placeholder="Ej: Mantén la rodilla alineada con el segundo dedo del pie..."
+                                        )
                             with c_alt:
                                 pn = st.text_input("pn", value=e.get("patientName", ""), key=f"pn_{eid}", label_visibility="collapsed", placeholder="(igual que el nombre)")
                             with c2:
@@ -1263,8 +1286,17 @@ if st.session_state.admin_mode:
                             with c4:
                                 b = st.checkbox("🗑️ Borrar", key=f"del_{eid}")
                                 
-                            nuevos_datos[eid] = {"id": eid, "name": n, "patientName": pn, "videoUrl": u, "category": c}
-                            if b: ids_borrar.append(eid)
+                            comentario_ejercicio = st.session_state.get(f"default_note_{eid}", e.get("defaultNote", "")).strip()
+                            nuevos_datos[eid] = {
+                                "id": eid,
+                                "name": n,
+                                "patientName": pn,
+                                "videoUrl": u,
+                                "category": c,
+                                "defaultNote": comentario_ejercicio
+                            }
+                            if b:
+                                ids_borrar.append(eid)
                             
                 st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -1464,8 +1496,11 @@ if st.session_state.admin_mode:
                             s = st.text_input("S", key=f"ser_{e_id}", placeholder="Series", label_visibility="collapsed")
                         with col_r:
                             r = st.text_input("R", key=f"rep_{e_id}", placeholder="Reps", label_visibility="collapsed")
-                        with col_n:
-                            n = st.text_input("N", key=f"not_{e_id}", placeholder="Notas...", label_visibility="collapsed")
+                        with c_n:
+                            note_key = f"not_{e_id}"
+                            if note_key not in st.session_state:
+                                st.session_state[note_key] = (ej_obj.get("defaultNote", "") if ej_obj else "")
+                            n = st.text_input("N", key=note_key, placeholder="Notas...", label_visibility="collapsed")
                         with col_up:
                             if st.button("⬆️", key=f"up_{e_id}"):
                                 if idx > 0:
@@ -1772,7 +1807,10 @@ if st.session_state.admin_mode:
                                     with col_r:
                                         r = st.text_input("R", key=f"raf_{d_idx}_{b_idx}_{eid}", placeholder="Rep", label_visibility="collapsed")
                                     with col_n:
-                                        n = st.text_input("N", key=f"naf_{d_idx}_{b_idx}_{eid}", placeholder="Nota", label_visibility="collapsed")
+                                        note_key_af = f"naf_{d_idx}_{b_idx}_{eid}"
+                                        if note_key_af not in st.session_state:
+                                            st.session_state[note_key_af] = (ej_obj.get("defaultNote", "") if ej_obj else "")
+                                        n = st.text_input("N", key=note_key_af, placeholder="Nota", label_visibility="collapsed")
                                     with col_e_prio:
                                         prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
                                         if prio_key not in st.session_state:
@@ -2023,7 +2061,7 @@ else:
                             notes = item.get("notes", "")
                             
                             prio_badge = "⭐ " if item.get('isPriority') else ""
-                            notas_str = f" 📝 {notes}" if notes else ""
+                            notas_str = f" 📝 {escape(str(notes))}" if notes else ""
                             vid_url = ex_data.get('videoUrl', '').strip()
                             nombre_mostrado = nombre_para_paciente(ex_data)
                             
@@ -2147,7 +2185,7 @@ else:
                             notas_html = f"""
                             <div style='display:flex; align-items:center; gap:12px; background:#f6f8f6; border:1px solid #dce7e2; border-radius:8px; padding:8px 12px; margin-top:8px;'>
                                 <div style='font-size:11px; color:#13765d; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; white-space:nowrap;'>Notas</div>
-                                <div style='font-size:14px; color:#103d33; flex:1;'>{notes}</div>
+                                <div style='font-size:14px; color:#103d33; flex:1;'>{escape(str(notes))}</div>
                             </div>
                             """ if notes else ""
 
@@ -2190,3 +2228,4 @@ else:
                 st.session_state.logged_pin = None
                 st.query_params.clear()
                 st.rerun()
+                
