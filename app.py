@@ -1223,7 +1223,7 @@ if st.session_state.admin_mode:
             with st.form("form_añadir_ejercicio", clear_on_submit=True):
                 st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
                 
-                cn1, cn_alt, cn2, cn3, cn4 = st.columns([3, 2.3, 3, 2, 1])
+                cn1, cn_alt, cn2, cn3, cn4 = st.columns([3, 2.9, 3, 1.2, 1])
                 with cn1:
                     new_n = st.text_input("new_n", placeholder="Nombre del ejercicio...", label_visibility="collapsed")
                 with cn_alt:
@@ -1262,11 +1262,12 @@ if st.session_state.admin_mode:
                 nuevos_datos = {}
                 ids_borrar = []
                 
-                c_h1, c_h_alt, c_h2, c_h3, c_h4 = st.columns([3, 2.3, 3, 2, 1])
+                c_h1, c_h_alt, c_h2, c_h3, c_h_comment, c_h4 = st.columns([2.7, 2.0, 2.5, 1.0, 1.8, 1.0])
                 c_h1.caption("NOMBRE")
                 c_h_alt.caption("NOMBRE PARA EL PACIENTE")
                 c_h2.caption("ENLACE YOUTUBE")
                 c_h3.caption("CATEGORÍA")
+                c_h_comment.caption("COMENTARIO")
                 c_h4.caption("ACCIÓN")
                 
                 for cat in CATEGORIAS_EJ:
@@ -1277,45 +1278,9 @@ if st.session_state.admin_mode:
                         st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat} (Total: {len(ej_cat)})</div>", unsafe_allow_html=True)
                         for e in ej_cat:
                             eid = e["id"]
-                            c1, c_alt, c2, c3, c4 = st.columns([3, 2.3, 3, 2, 1])
+                            c1, c_alt, c2, c3, c_comment, c4 = st.columns([2.7, 2.0, 2.5, 1.0, 1.8, 1.0])
                             with c1:
-                                # El bocadillo queda visualmente pegado al nombre.
-                                name_col, comment_col = st.columns([8.5, 1.5], gap="small")
-                                with name_col:
-                                    n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
-                                with comment_col:
-                                    with st.popover("📝", help="Comentario predeterminado de este ejercicio"):
-                                        st.markdown("""
-                                        <div style="
-                                            position:relative;
-                                            background:#fffef7;
-                                            border:2px solid #13765d;
-                                            border-radius:18px 18px 18px 6px;
-                                            padding:12px 16px;
-                                            margin:2px 0 10px 0;
-                                            color:#103d33;
-                                            font-size:13px;
-                                            line-height:1.45;
-                                            box-shadow:0 4px 12px rgba(16,61,51,.08);
-                                        ">
-                                            <div style="font-weight:800; color:#13765d; margin-bottom:4px;">📝 Comentario asociado</div>
-                                            <div>Este comentario aparecerá automáticamente en <strong>Notas</strong> cuando añadas el ejercicio a una sesión o programa.</div>
-                                        </div>
-                                        <div style="
-                                            width:0; height:0;
-                                            border-top:10px solid #13765d;
-                                            border-right:10px solid transparent;
-                                            margin:-10px 0 8px 16px;
-                                        "></div>
-                                        """, unsafe_allow_html=True)
-                                        st.text_area(
-                                            "Comentario",
-                                            value=e.get("defaultNote", ""),
-                                            key=f"default_note_{eid}",
-                                            height=120,
-                                            placeholder="Ej: Mantén la rodilla alineada con el segundo dedo del pie...",
-                                            label_visibility="collapsed"
-                                        )
+                                n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
                             with c_alt:
                                 pn = st.text_input("pn", value=e.get("patientName", ""), key=f"pn_{eid}", label_visibility="collapsed", placeholder="(igual que el nombre)")
                             with c2:
@@ -1323,6 +1288,42 @@ if st.session_state.admin_mode:
                             with c3:
                                 idx = CATEGORIAS_EJ.index(e["category"]) if e["category"] in CATEGORIAS_EJ else 0
                                 c = st.selectbox("c", CATEGORIAS_EJ, index=idx, key=f"c_{eid}", label_visibility="collapsed")
+                            with c_comment:
+                                comentario_ejercicio_actual = e.get("defaultNote", "").strip()
+                                icono_estado = "✅" if comentario_ejercicio_actual else "❌"
+                                # Botón tipo bocadillo de cómic: icono de escritura + estado.
+                                with st.popover(f"📝 {icono_estado}", help="Abrir comentario asociado a este ejercicio"):
+                                    st.markdown("""
+                                    <div style="
+                                        position:relative;
+                                        background:#fffef7;
+                                        border:2px solid #13765d;
+                                        border-radius:20px 20px 20px 7px;
+                                        padding:14px 17px 15px 17px;
+                                        margin:0 0 12px 0;
+                                        color:#103d33;
+                                        font-size:13px;
+                                        line-height:1.5;
+                                        box-shadow:0 5px 15px rgba(16,61,51,.12);
+                                    ">
+                                        <div style="font-size:15px; font-weight:800; color:#13765d; margin-bottom:5px;">📝 Comentario del ejercicio</div>
+                                        <div>Este texto aparecerá automáticamente en <strong>Notas</strong> al añadir este ejercicio a una sesión clínica o a un programa de AF.</div>
+                                    </div>
+                                    <div style="
+                                        width:0; height:0;
+                                        border-top:12px solid #13765d;
+                                        border-right:12px solid transparent;
+                                        margin:-12px 0 10px 18px;
+                                    "></div>
+                                    """, unsafe_allow_html=True)
+                                    st.text_area(
+                                        "Comentario",
+                                        value=e.get("defaultNote", ""),
+                                        key=f"default_note_{eid}",
+                                        height=130,
+                                        placeholder="Ej: Mantén la rodilla alineada con el segundo dedo del pie...",
+                                        label_visibility="collapsed"
+                                    )
                             with c4:
                                 b = st.checkbox("🗑️ Borrar", key=f"del_{eid}")
                                 
