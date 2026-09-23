@@ -321,6 +321,7 @@ def get_exercises():
             records.append({
                 "id": clean_str(r.get("id", "")), 
                 "name": clean_str(r.get("name", "")), 
+                "patientName": clean_str(r.get("patientName", "")),
                 "videoUrl": clean_str(r.get("videoUrl", "")), 
                 "category": clean_str(r.get("category", ""))
             })
@@ -333,9 +334,16 @@ def save_exercises(exercises_list):
     if st.session_state.gsheets_read_error:
         st.error("❌ Guardado bloqueado por seguridad: Hubo un error de conexión al cargar los datos.")
         return
-    exercise_columns = ["id", "name", "videoUrl", "category"]
+    exercise_columns = ["id", "name", "patientName", "videoUrl", "category"]
     conn.update(spreadsheet=SHEET_URL, worksheet="ejercicios", data=pd.DataFrame(exercises_list, columns=exercise_columns))
     st.cache_data.clear()
+
+def nombre_para_paciente(ex_data):
+    """Devuelve el nombre alternativo del ejercicio si existe, o si no, el nombre original."""
+    if not ex_data:
+        return ""
+    alternativo = ex_data.get("patientName", "").strip()
+    return alternativo if alternativo else ex_data.get("name", "")
 
 def get_general_instructions():
     """Carga el listado maestro de indicaciones generales."""
@@ -1190,9 +1198,11 @@ if st.session_state.admin_mode:
             with st.form("form_añadir_ejercicio", clear_on_submit=True):
                 st.markdown("<div style='color:var(--green); font-weight:bold; font-size:16px; margin: 0 0 10px 0;'>➕ AÑADIR NUEVO EJERCICIO</div>", unsafe_allow_html=True)
                 
-                cn1, cn2, cn3, cn4 = st.columns([4, 4, 3, 1.5])
+                cn1, cn_alt, cn2, cn3, cn4 = st.columns([3, 2.3, 3, 2, 1])
                 with cn1:
                     new_n = st.text_input("new_n", placeholder="Nombre del ejercicio...", label_visibility="collapsed")
+                with cn_alt:
+                    new_pn = st.text_input("new_pn", placeholder="Nombre para el paciente (opcional)...", label_visibility="collapsed")
                 with cn2:
                     new_u = st.text_input("new_u", placeholder="Enlace de YouTube...", label_visibility="collapsed")
                 with cn3:
@@ -1205,6 +1215,7 @@ if st.session_state.admin_mode:
                         exercises.append({
                             "id": str(uuid.uuid4()),
                             "name": new_n.strip(),
+                            "patientName": new_pn.strip(),
                             "videoUrl": new_u.strip(),
                             "category": new_c
                         })
@@ -1224,8 +1235,9 @@ if st.session_state.admin_mode:
                 nuevos_datos = {}
                 ids_borrar = []
                 
-                c_h1, c_h2, c_h3, c_h4 = st.columns([4, 4, 3, 1.5])
+                c_h1, c_h_alt, c_h2, c_h3, c_h4 = st.columns([3, 2.3, 3, 2, 1])
                 c_h1.caption("NOMBRE")
+                c_h_alt.caption("NOMBRE PARA EL PACIENTE")
                 c_h2.caption("ENLACE YOUTUBE")
                 c_h3.caption("CATEGORÍA")
                 c_h4.caption("ACCIÓN")
@@ -1238,9 +1250,11 @@ if st.session_state.admin_mode:
                         st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat} (Total: {len(ej_cat)})</div>", unsafe_allow_html=True)
                         for e in ej_cat:
                             eid = e["id"]
-                            c1, c2, c3, c4 = st.columns([4, 4, 3, 1.5])
+                            c1, c_alt, c2, c3, c4 = st.columns([3, 2.3, 3, 2, 1])
                             with c1:
                                 n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
+                            with c_alt:
+                                pn = st.text_input("pn", value=e.get("patientName", ""), key=f"pn_{eid}", label_visibility="collapsed", placeholder="(igual que el nombre)")
                             with c2:
                                 u = st.text_input("u", value=e["videoUrl"], key=f"u_{eid}", label_visibility="collapsed")
                             with c3:
@@ -1249,7 +1263,7 @@ if st.session_state.admin_mode:
                             with c4:
                                 b = st.checkbox("🗑️ Borrar", key=f"del_{eid}")
                                 
-                            nuevos_datos[eid] = {"id": eid, "name": n, "videoUrl": u, "category": c}
+                            nuevos_datos[eid] = {"id": eid, "name": n, "patientName": pn, "videoUrl": u, "category": c}
                             if b: ids_borrar.append(eid)
                             
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -2011,15 +2025,16 @@ else:
                             prio_badge = "⭐ " if item.get('isPriority') else ""
                             notas_str = f" 📝 {notes}" if notes else ""
                             vid_url = ex_data.get('videoUrl', '').strip()
+                            nombre_mostrado = nombre_para_paciente(ex_data)
                             
                             with st.container(border=True):
                                 col_txt, col_btn = st.columns([4, 1])
                                 with col_txt:
-                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'>{prio_badge}<span style='font-weight:600;'>{ex_data['name']}</span> 🔄 {series}x{reps}{notas_str}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'>{prio_badge}<span style='font-weight:600;'>{nombre_mostrado}</span> 🔄 {series}x{reps}{notas_str}</div>", unsafe_allow_html=True)
                                 with col_btn:
                                     if tiene_video_valido(vid_url):
                                         if st.button("▶ Vídeo", key=f"v_af_{pr['id']}_{d_idx}_{block.get('blockTitle','b')}_{idx}", type="primary", use_container_width=True):
-                                            modal_ver_video(vid_url, ex_data['name'])
+                                            modal_ver_video(vid_url, nombre_mostrado)
 
         elif sesion_encontrada:
             sesiones_del_pac = [pl for pl in plans if pl.get("isActive", True) and str(pl["patientId"]) == str(sesion_encontrada["patientId"])]
@@ -2139,11 +2154,11 @@ else:
                             with st.container(border=True):
                                 col_txt, col_btn = st.columns([4, 1])
                                 with col_txt:
-                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {ex_data['name']}</strong></div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='font-size:15px; color:#103d33; padding-top:4px;'><strong>{idx}. {nombre_para_paciente(ex_data)}</strong></div>", unsafe_allow_html=True)
                                 with col_btn:
                                     if tiene_video_valido(vid_url):
                                         if st.button("▶ Vídeo", key=f"v_ses_{sesion_encontrada['id']}_{idx}", type="primary", use_container_width=False):
-                                            modal_ver_video(vid_url, ex_data['name'])
+                                            modal_ver_video(vid_url, nombre_para_paciente(ex_data))
                                 
                                 st.markdown(f"<div style='margin-bottom:8px;'>{box_series_reps}{notas_html}</div>", unsafe_allow_html=True)
                     
