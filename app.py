@@ -1809,63 +1809,26 @@ if st.session_state.admin_mode:
                     )
                     if pegar_bloque and st.session_state.af_block_clipboard is not None:
                         nuevo_b_idx = st.session_state[key_num_bloques]
+                        cb = st.session_state.af_block_clipboard
+                        
+                        st.session_state[f"bcat_{d_idx}_{nuevo_b_idx}"] = cb.get("bcat", CATEGORIAS_EJ[0])
+                        st.session_state[f"breg_{d_idx}_{nuevo_b_idx}"] = cb.get("breg", "")
+                        st.session_state[f"bejs_{d_idx}_{nuevo_b_idx}"] = deepcopy(cb.get("bejs", []))
+                        st.session_state[f"orden_af_{d_idx}_{nuevo_b_idx}"] = deepcopy(cb.get("orden_af", []))
+                        
+                        for eid, data in cb.get("exercises_data", {}).items():
+                            st.session_state[f"saf_{d_idx}_{nuevo_b_idx}_{eid}"] = data.get("saf", "")
+                            st.session_state[f"raf_{d_idx}_{nuevo_b_idx}_{eid}"] = data.get("raf", "")
+                            st.session_state[f"naf_{d_idx}_{nuevo_b_idx}_{eid}"] = data.get("naf", "")
+                            st.session_state[f"prio_{d_idx}_{nuevo_b_idx}_{eid}"] = data.get("prio", False)
+                            st.session_state.prio_dict[f"prio_{d_idx}_{nuevo_b_idx}_{eid}"] = data.get("prio", False)
+                            
                         st.session_state[key_num_bloques] += 1
-                        st.session_state.af_pending_paste = {
-                            "d_idx": d_idx,
-                            "b_idx": nuevo_b_idx,
-                            "block": deepcopy(st.session_state.af_block_clipboard)
-                        }
                         st.rerun()
 
                     bloques_dia = []
 
                     for b_idx in range(st.session_state[key_num_bloques]):
-                        pending_paste = st.session_state.get("af_pending_paste")
-                        if (
-                            pending_paste
-                            and pending_paste.get("d_idx") == d_idx
-                            and pending_paste.get("b_idx") == b_idx
-                        ):
-                            pasted_block = pending_paste["block"]
-                            pasted_category = pasted_block.get("blockCategory", CATEGORIAS_EJ[0])
-                            if pasted_category not in CATEGORIAS_EJ:
-                                pasted_category = CATEGORIAS_EJ[0]
-
-                            st.session_state[f"bcat_{d_idx}_{b_idx}"] = pasted_category
-                            st.session_state[f"breg_{d_idx}_{b_idx}"] = pasted_block.get("blockRule", "")
-
-                            pasted_exercises = pasted_block.get("exercises", [])
-                            pasted_ids = [
-                                ex.get("exerciseId")
-                                for ex in pasted_exercises
-                                if ex.get("exerciseId") and get_exercise(ex.get("exerciseId"))
-                            ]
-                            st.session_state[f"orden_af_{d_idx}_{b_idx}"] = pasted_ids.copy()
-
-                            pasted_names = [
-                                get_exercise(eid)["name"]
-                                for eid in pasted_ids
-                                if get_exercise(eid)
-                                and get_exercise(eid).get("category") == pasted_category
-                            ]
-                            st.session_state[f"bejs_{d_idx}_{b_idx}"] = pasted_names
-
-                            for ex in pasted_exercises:
-                                eid = ex.get("exerciseId")
-                                if not eid or not get_exercise(eid):
-                                    continue
-                                st.session_state[f"saf_{d_idx}_{b_idx}_{eid}"] = ex.get("series", "")
-                                st.session_state[f"raf_{d_idx}_{b_idx}_{eid}"] = ex.get("reps", "")
-                                st.session_state[f"naf_{d_idx}_{b_idx}_{eid}"] = ex.get(
-                                    "notes",
-                                    get_exercise(eid).get("defaultNote", "")
-                                )
-                                prio_key_paste = f"prio_{d_idx}_{b_idx}_{eid}"
-                                st.session_state[prio_key_paste] = bool(ex.get("isPriority", False))
-                                st.session_state.prio_dict[prio_key_paste] = bool(ex.get("isPriority", False))
-
-                            st.session_state.af_pending_paste = None
-
                         with st.container(border=True):
                             col_block_title, col_block_copy = st.columns([4, 1])
                             with col_block_title:
@@ -1882,34 +1845,24 @@ if st.session_state.admin_mode:
                                     use_container_width=True,
                                     help="Copia este bloque completo para poder pegarlo en otro día."
                                 ):
-                                    copied_exercises = []
-                                    for copied_eid in st.session_state.get(f"orden_af_{d_idx}_{b_idx}", []):
-                                        copied_obj = get_exercise(copied_eid)
-                                        if not copied_obj:
-                                            continue
-                                        copied_exercises.append({
-                                            "exerciseId": copied_eid,
-                                            "isPriority": bool(st.session_state.get(f"prio_{d_idx}_{b_idx}_{copied_eid}", False)),
-                                            "series": st.session_state.get(f"saf_{d_idx}_{b_idx}_{copied_eid}", ""),
-                                            "reps": st.session_state.get(f"raf_{d_idx}_{b_idx}_{copied_eid}", ""),
-                                            "notes": st.session_state.get(
-                                                f"naf_{d_idx}_{b_idx}_{copied_eid}",
-                                                copied_obj.get("defaultNote", "")
-                                            ),
-                                        })
+                                    cb_orden = deepcopy(st.session_state.get(f"orden_af_{d_idx}_{b_idx}", []))
+                                    cb_ex_data = {}
+                                    for copied_eid in cb_orden:
+                                        cb_ex_data[copied_eid] = {
+                                            "saf": st.session_state.get(f"saf_{d_idx}_{b_idx}_{copied_eid}", ""),
+                                            "raf": st.session_state.get(f"raf_{d_idx}_{b_idx}_{copied_eid}", ""),
+                                            "naf": st.session_state.get(f"naf_{d_idx}_{b_idx}_{copied_eid}", ""),
+                                            "prio": st.session_state.get(f"prio_{d_idx}_{b_idx}_{copied_eid}", False)
+                                        }
 
                                     st.session_state.af_block_clipboard = {
-                                        "blockTitle": f"{b_cat} {b_regla}".strip(),
-                                        "blockCategory": b_cat,
-                                        "blockRule": b_regla,
-                                        "exercises": copied_exercises,
+                                        "bcat": st.session_state.get(f"bcat_{d_idx}_{b_idx}", CATEGORIAS_EJ[0]),
+                                        "breg": st.session_state.get(f"breg_{d_idx}_{b_idx}", ""),
+                                        "bejs": deepcopy(st.session_state.get(f"bejs_{d_idx}_{b_idx}", [])),
+                                        "orden_af": cb_orden,
+                                        "exercises_data": cb_ex_data
                                     }
-                                    st.session_state.af_pending_paste = None
-                                    st.toast(
-                                        f"✅ Bloque {b_idx + 1} copiado. Ya puedes pegarlo en otro día.",
-                                        icon="📋"
-                                    )
-                                    st.rerun()
+                                    st.toast(f"✅ Bloque {b_idx + 1} copiado. Ya puedes pegarlo en otro día.", icon="📋")
 
                             
                             b_nombre_completo = f"{b_cat} {b_regla}".strip()
