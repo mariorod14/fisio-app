@@ -33,14 +33,13 @@ st.session_state.gsheets_read_error = False
 # VARIABLES GLOBALES
 APP_URL = "https://xj2xjmcpyuweucfq3b7axg.streamlit.app"  
 CATEGORIAS_EJ = ["CORE", "EEII", "EESS", "Estiramientos y movilidad"]
-CATEGORIAS_DB = ["CORE", "EEII", "EEII (3FE)", "EEII (H-H)", "EESS", "EESS (empuje)", "EESS (traccion)", "Estiramientos y movilidad"]
+CATEGORIAS_DB = ["CORE", "EEII", "EEII (3FE)", "EEII (H-H)", "EESS", "Estiramientos y movilidad"]
 
 def get_main_category(cat_str):
-    """Devuelve la categoría principal para agrupar (ej: 'EEII (3FE)' -> 'EEII', 'EESS (empuje)' -> 'EESS')"""
+    """Devuelve la categoría principal para agrupar (ej: 'EEII (3FE)' -> 'EEII')"""
     if not cat_str: return ""
     s = str(cat_str)
     if s.startswith("EEII"): return "EEII"
-    if s.startswith("EESS"): return "EESS"
     return s
 
 ACCESS_CODE_LENGTH = 10
@@ -751,8 +750,6 @@ if st.session_state.admin_mode:
         filtro_subcat_ed = "Todos"
         if filtro_cat_ed == "EEII":
             filtro_subcat_ed = cf2.selectbox("Subcategoría EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"fsub_{pl_id}")
-        elif filtro_cat_ed == "EESS":
-            filtro_subcat_ed = cf2.selectbox("Subcategoría EESS:", ["Todos", "EESS (General)", "EESS (empuje)", "EESS (traccion)"], key=f"fsub_{pl_id}")
             
         if f"edit_ses_{pl_id}_ejs" not in st.session_state:
             st.session_state[f"edit_ses_{pl_id}_ejs"] = pl["exerciseIds"].copy()
@@ -772,10 +769,6 @@ if st.session_state.admin_mode:
                     if filtro_subcat_ed == "EEII (General)" and cat != "EEII": mostrar_cat = False
                     elif filtro_subcat_ed == "EEII (3FE)" and cat != "EEII (3FE)": mostrar_cat = False
                     elif filtro_subcat_ed == "EEII (H-H)" and cat != "EEII (H-H)": mostrar_cat = False
-                elif filtro_cat_ed == "EESS" and filtro_subcat_ed != "Todos":
-                    if filtro_subcat_ed == "EESS (General)" and cat != "EESS": mostrar_cat = False
-                    elif filtro_subcat_ed == "EESS (empuje)" and cat != "EESS (empuje)": mostrar_cat = False
-                    elif filtro_subcat_ed == "EESS (traccion)" and cat != "EESS (traccion)": mostrar_cat = False
                     
             ej_cat = sorted([x for x in exercises if x.get("category") == cat], key=lambda x: x["name"].lower())
             for e in ej_cat:
@@ -908,8 +901,6 @@ if st.session_state.admin_mode:
                     b_subcat = "Todos"
                     if b_cat == "EEII":
                         b_subcat = c_sub.selectbox("Filtro EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"ebsub_{pr_id}_{d_idx}_{b_idx}")
-                    elif b_cat == "EESS":
-                        b_subcat = c_sub.selectbox("Filtro EESS:", ["Todos", "EESS (General)", "EESS (empuje)", "EESS (traccion)"], key=f"ebsub_{pr_id}_{d_idx}_{b_idx}")
                     b_regla = c_reg.text_input("Regla / Indicación:", value=def_rule, key=f"ebreg_{pr_id}_{d_idx}_{b_idx}")
                     
                     if f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}" not in st.session_state:
@@ -930,10 +921,6 @@ if st.session_state.admin_mode:
                                 if b_subcat == "EEII (General)" and cat_e != "EEII": mostrar = False
                                 elif b_subcat == "EEII (3FE)" and cat_e != "EEII (3FE)": mostrar = False
                                 elif b_subcat == "EEII (H-H)" and cat_e != "EEII (H-H)": mostrar = False
-                            elif b_cat == "EESS" and b_subcat != "Todos":
-                                if b_subcat == "EESS (General)" and cat_e != "EESS": mostrar = False
-                                elif b_subcat == "EESS (empuje)" and cat_e != "EESS (empuje)": mostrar = False
-                                elif b_subcat == "EESS (traccion)" and cat_e != "EESS (traccion)": mostrar = False
                             
                             if mostrar or (e["name"] in default_names):
                                 ej_options_block[e["name"]] = e["id"]
@@ -1506,8 +1493,6 @@ if st.session_state.admin_mode:
                 filtro_subcat = "Todos"
                 if filtro_cat == "EEII":
                     filtro_subcat = c_filt2.selectbox("Subcategoría EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key="crear_ses_fsub")
-                elif filtro_cat == "EESS":
-                    filtro_subcat = c_filt2.selectbox("Subcategoría EESS:", ["Todos", "EESS (General)", "EESS (empuje)", "EESS (traccion)"], key="crear_ses_fsub")
                 
                 if 'orden_ejs' not in st.session_state:
                     st.session_state.orden_ejs = []
@@ -1527,10 +1512,6 @@ if st.session_state.admin_mode:
                             if filtro_subcat == "EEII (General)" and cat != "EEII": mostrar_cat = False
                             elif filtro_subcat == "EEII (3FE)" and cat != "EEII (3FE)": mostrar_cat = False
                             elif filtro_subcat == "EEII (H-H)" and cat != "EEII (H-H)": mostrar_cat = False
-                        elif filtro_cat == "EESS" and filtro_subcat != "Todos":
-                            if filtro_subcat == "EESS (General)" and cat != "EESS": mostrar_cat = False
-                            elif filtro_subcat == "EESS (empuje)" and cat != "EESS (empuje)": mostrar_cat = False
-                            elif filtro_subcat == "EESS (traccion)" and cat != "EESS (traccion)": mostrar_cat = False
                             
                     ej_ordenados = sorted([x for x in exercises if x.get("category") == cat], key=lambda x: x["name"].lower())
                     for e in ej_ordenados:
@@ -1906,8 +1887,6 @@ if st.session_state.admin_mode:
                             b_subcat = "Todos"
                             if b_cat == "EEII":
                                 b_subcat = col_bc2.selectbox("Filtro EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"bsub_{d_idx}_{b_idx}")
-                            elif b_cat == "EESS":
-                                b_subcat = col_bc2.selectbox("Filtro EESS:", ["Todos", "EESS (General)", "EESS (empuje)", "EESS (traccion)"], key=f"bsub_{d_idx}_{b_idx}")
                             b_regla = col_bc3.text_input("Regla / Indicación del Bloque:", placeholder="Ej: Elige 2 ejercicios de este bloque", key=f"breg_{d_idx}_{b_idx}")
 
                             key_orden = f"orden_af_{d_idx}_{b_idx}"
@@ -1923,10 +1902,6 @@ if st.session_state.admin_mode:
                                         if b_subcat == "EEII (General)" and cat_e != "EEII": mostrar = False
                                         elif b_subcat == "EEII (3FE)" and cat_e != "EEII (3FE)": mostrar = False
                                         elif b_subcat == "EEII (H-H)" and cat_e != "EEII (H-H)": mostrar = False
-                                    elif b_cat == "EESS" and b_subcat != "Todos":
-                                        if b_subcat == "EESS (General)" and cat_e != "EESS": mostrar = False
-                                        elif b_subcat == "EESS (empuje)" and cat_e != "EESS (empuje)": mostrar = False
-                                        elif b_subcat == "EESS (traccion)" and cat_e != "EESS (traccion)": mostrar = False
                                     if mostrar:
                                         ej_options_block[e["name"]] = e["id"]
 
