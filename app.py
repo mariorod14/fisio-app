@@ -1230,7 +1230,7 @@ if st.session_state.admin_mode:
                         return cat == mac
                         
                     ej_macro = [e for e in exercises if in_macro(e.get("category"), macro)]
-                    ej_macro = sorted(ej_macro, key=lambda x: (x.get("category", ""), x["name"].lower()))
+                    ej_macro = sorted(ej_macro, key=lambda x: x["name"].lower() if macro == "EEII" else (x.get("category", ""), x["name"].lower()))
                     
                     if ej_macro:
                         st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{macro} (Total: {len(ej_macro)})</div>", unsafe_allow_html=True)
