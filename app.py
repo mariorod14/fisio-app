@@ -1263,7 +1263,7 @@ if st.session_state.admin_mode:
                 ids_borrar = []
                 
                 # El comentario va como segunda columna. Se deja deliberadamente sin título.
-                c_h1, c_h_comment, c_h_alt, c_h2, c_h3, c_h4 = st.columns([2.7, 1.4, 2.0, 2.5, 0.9, 1.0])
+                c_h1, c_h_comment, c_h_alt, c_h2, c_h3, c_h4 = st.columns([2.7, 0.5, 2.0, 2.5, 1.8, 1.0])
                 c_h1.caption("NOMBRE")
                 # c_h_comment: sin título, solo el botón 📝 ✅ / 📝 ❌
                 c_h_alt.caption("NOMBRE PARA EL PACIENTE")
@@ -1279,7 +1279,7 @@ if st.session_state.admin_mode:
                         st.markdown(f"<div style='color:var(--dark); font-weight:bold; font-size:16px; margin: 15px 0 5px 0; border-bottom: 1px solid var(--line);'>{cat} (Total: {len(ej_cat)})</div>", unsafe_allow_html=True)
                         for e in ej_cat:
                             eid = e["id"]
-                            c1, c_comment, c_alt, c2, c3, c4 = st.columns([2.7, 1.4, 2.0, 2.5, 0.9, 1.0])
+                            c1, c_comment, c_alt, c2, c3, c4 = st.columns([2.7, 0.5, 2.0, 2.5, 1.8, 1.0])
                             with c1:
                                 n = st.text_input("n", value=e["name"], key=f"n_{eid}", label_visibility="collapsed")
                             with c_alt:
