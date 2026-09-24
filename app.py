@@ -7,6 +7,7 @@ import secrets
 import hmac
 import uuid
 import json
+from copy import deepcopy
 from urllib.parse import urlparse, parse_qs
 import streamlit.components.v1 as components
 from html import escape
@@ -1778,6 +1779,11 @@ if st.session_state.admin_mode:
                 dias_construidos = []
                 falta_algun_video_af = False
 
+                # Portapapeles temporal para copiar/pegar bloques dentro del mismo
+                # programa de AF que se está diseñando. No se guarda en Google Sheets.
+                if "af_block_clipboard" not in st.session_state:
+                    st.session_state.af_block_clipboard = None
+
                 for d_idx in range(st.session_state.num_dias):
                     st.markdown(f"<div style='background:#f6f8f6; padding:15px; border-radius:12px; border:1px solid #dce7e2; margin-top:15px;'><h4 style='color:#13765d !important; margin:0;'>DÍA {d_idx + 1}</h4></div>", unsafe_allow_html=True)
                     
@@ -1787,7 +1793,7 @@ if st.session_state.admin_mode:
                     if key_num_bloques not in st.session_state:
                         st.session_state[key_num_bloques] = 1
 
-                    cb1, cb2 = st.columns(2)
+                    cb1, cb2, cb3 = st.columns(3)
                     if cb1.button(f"➕ Añadir Bloque al Día {d_idx + 1}", key=f"addb_{d_idx}"):
                         st.session_state[key_num_bloques] += 1
                         st.rerun()
@@ -1795,15 +1801,116 @@ if st.session_state.admin_mode:
                         st.session_state[key_num_bloques] -= 1
                         st.rerun()
 
+                    pegar_bloque = cb3.button(
+                        "📥 Pegar bloque copiado",
+                        key=f"pasteb_{d_idx}",
+                        disabled=st.session_state.af_block_clipboard is None,
+                        help="Añade al final de este día una copia exacta del último bloque que hayas copiado."
+                    )
+                    if pegar_bloque and st.session_state.af_block_clipboard is not None:
+                        nuevo_b_idx = st.session_state[key_num_bloques]
+                        st.session_state[key_num_bloques] += 1
+                        st.session_state.af_pending_paste = {
+                            "d_idx": d_idx,
+                            "b_idx": nuevo_b_idx,
+                            "block": deepcopy(st.session_state.af_block_clipboard)
+                        }
+                        st.rerun()
+
                     bloques_dia = []
 
                     for b_idx in range(st.session_state[key_num_bloques]):
+                        pending_paste = st.session_state.get("af_pending_paste")
+                        if (
+                            pending_paste
+                            and pending_paste.get("d_idx") == d_idx
+                            and pending_paste.get("b_idx") == b_idx
+                        ):
+                            pasted_block = pending_paste["block"]
+                            pasted_category = pasted_block.get("blockCategory", CATEGORIAS_EJ[0])
+                            if pasted_category not in CATEGORIAS_EJ:
+                                pasted_category = CATEGORIAS_EJ[0]
+
+                            st.session_state[f"bcat_{d_idx}_{b_idx}"] = pasted_category
+                            st.session_state[f"breg_{d_idx}_{b_idx}"] = pasted_block.get("blockRule", "")
+
+                            pasted_exercises = pasted_block.get("exercises", [])
+                            pasted_ids = [
+                                ex.get("exerciseId")
+                                for ex in pasted_exercises
+                                if ex.get("exerciseId") and get_exercise(ex.get("exerciseId"))
+                            ]
+                            st.session_state[f"orden_af_{d_idx}_{b_idx}"] = pasted_ids.copy()
+
+                            pasted_names = [
+                                get_exercise(eid)["name"]
+                                for eid in pasted_ids
+                                if get_exercise(eid)
+                                and get_exercise(eid).get("category") == pasted_category
+                            ]
+                            st.session_state[f"bejs_{d_idx}_{b_idx}"] = pasted_names
+
+                            for ex in pasted_exercises:
+                                eid = ex.get("exerciseId")
+                                if not eid or not get_exercise(eid):
+                                    continue
+                                st.session_state[f"saf_{d_idx}_{b_idx}_{eid}"] = ex.get("series", "")
+                                st.session_state[f"raf_{d_idx}_{b_idx}_{eid}"] = ex.get("reps", "")
+                                st.session_state[f"naf_{d_idx}_{b_idx}_{eid}"] = ex.get(
+                                    "notes",
+                                    get_exercise(eid).get("defaultNote", "")
+                                )
+                                prio_key_paste = f"prio_{d_idx}_{b_idx}_{eid}"
+                                st.session_state[prio_key_paste] = bool(ex.get("isPriority", False))
+                                st.session_state.prio_dict[prio_key_paste] = bool(ex.get("isPriority", False))
+
+                            st.session_state.af_pending_paste = None
+
                         with st.container(border=True):
-                            st.markdown(f"**Bloque {b_idx + 1}**")
+                            col_block_title, col_block_copy = st.columns([4, 1])
+                            with col_block_title:
+                                st.markdown(f"**Bloque {b_idx + 1}**")
                             col_bcat, col_breg = st.columns([1, 2])
-                            
+
                             b_cat = col_bcat.selectbox("Categoría del bloque:", CATEGORIAS_EJ, key=f"bcat_{d_idx}_{b_idx}")
                             b_regla = col_breg.text_input("Regla / Indicación (opcional):", placeholder="Ej: (elegir 3)", key=f"breg_{d_idx}_{b_idx}")
+                            
+                            with col_block_copy:
+                                if st.button(
+                                    "📋 Copiar",
+                                    key=f"copyb_{d_idx}_{b_idx}",
+                                    use_container_width=True,
+                                    help="Copia este bloque completo para poder pegarlo en otro día."
+                                ):
+                                    copied_exercises = []
+                                    for copied_eid in st.session_state.get(f"orden_af_{d_idx}_{b_idx}", []):
+                                        copied_obj = get_exercise(copied_eid)
+                                        if not copied_obj:
+                                            continue
+                                        copied_exercises.append({
+                                            "exerciseId": copied_eid,
+                                            "isPriority": bool(st.session_state.get(f"prio_{d_idx}_{b_idx}_{copied_eid}", False)),
+                                            "series": st.session_state.get(f"saf_{d_idx}_{b_idx}_{copied_eid}", ""),
+                                            "reps": st.session_state.get(f"raf_{d_idx}_{b_idx}_{copied_eid}", ""),
+                                            "notes": st.session_state.get(
+                                                f"naf_{d_idx}_{b_idx}_{copied_eid}",
+                                                copied_obj.get("defaultNote", "")
+                                            ),
+                                        })
+
+                                    st.session_state.af_block_clipboard = {
+                                        "blockTitle": f"{b_cat} {b_regla}".strip(),
+                                        "blockCategory": b_cat,
+                                        "blockRule": b_regla,
+                                        "exercises": copied_exercises,
+                                    }
+                                    st.session_state.af_pending_paste = None
+                                    st.toast(
+                                        f"✅ Bloque {b_idx + 1} copiado. Ya puedes pegarlo en otro día.",
+                                        icon="📋"
+                                    )
+                                    st.rerun()
+
                             
                             b_nombre_completo = f"{b_cat} {b_regla}".strip()
                             
