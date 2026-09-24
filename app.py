@@ -173,10 +173,7 @@ def get_ws_headers(worksheet_name, default_columns_tuple):
 def atomic_append_row_by_dict(worksheet_name, row_dict, default_columns):
     """
     Añade una fila nueva directamente a la hoja (operación atómica de Google Sheets),
-    sin leer ni reescribir el resto de filas. Así, si dos pacientes guardan casi al
-    mismo tiempo, ninguno pisa el dato del otro. Si por lo que sea no se puede
-    acceder así a la hoja, devuelve False para poder usar el guardado tradicional
-    como respaldo (nunca se pierde el dato, solo se pierde esta protección extra).
+    sin leer ni reescribir el resto de filas.
     """
     try:
         headers = get_ws_headers(worksheet_name, tuple(default_columns))
@@ -190,24 +187,20 @@ def atomic_append_row_by_dict(worksheet_name, row_dict, default_columns):
 def atomic_upsert_row_by_dict(worksheet_name, key_column, key_value, row_dict, default_columns):
     """
     Actualiza (o crea si no existe) una única fila identificada por key_column/key_value,
-    sin tocar el resto de la hoja. Pensado para datos que cambian a menudo por paciente
-    (como el progreso de una sesión), evitando que varios pacientes se pisen entre sí.
-    Devuelve False si no se puede, para recurrir al guardado tradicional como respaldo.
+    sin tocar el resto de la hoja.
     """
     try:
         headers = get_ws_headers(worksheet_name, tuple(default_columns))
         values = [str(row_dict.get(h, "")) for h in headers]
         ws = get_ws(worksheet_name)
 
-        # Para encontrar la fila usamos la lectura ya cacheada (rápida) en vez de
-        # buscarla directamente en Google Sheets con ws.find() (mucho más lento).
         fila_encontrada = None
         try:
             df_actual = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=2)
             if not df_actual.empty and key_column in df_actual.columns:
                 coincidencias = df_actual.index[df_actual[key_column].astype(str) == str(key_value)].tolist()
                 if coincidencias:
-                    fila_encontrada = coincidencias[0] + 2  # +1 por la cabecera, +1 porque las filas empiezan en 1
+                    fila_encontrada = coincidencias[0] + 2
         except Exception:
             fila_encontrada = None
 
@@ -224,7 +217,6 @@ def normalize_access_code(value):
     return "".join(ch for ch in str(value).upper() if ch.isalnum())
 
 def extract_pin_from_input(raw_value):
-    """Si el paciente pega el enlace completo (con ?pin=...), nos quedamos solo con el código."""
     raw = str(raw_value).strip()
     if "pin=" in raw.lower():
         idx_pin = raw.lower().rfind("pin=")
@@ -296,8 +288,6 @@ def get_patients():
                 except Exception:
                     revisions = []
 
-            # Migración automática: si el paciente tenía los datos antiguos (una sola ficha)
-            # y todavía no tiene historial de revisiones, los convertimos en la primera revisión.
             if not revisions:
                 old_ana = clean_str(r.get("anamnesis", ""))
                 old_ins = clean_str(r.get("inspeccion", ""))
@@ -368,14 +358,12 @@ def save_exercises(exercises_list):
     st.cache_data.clear()
 
 def nombre_para_paciente(ex_data):
-    """Devuelve el nombre alternativo del ejercicio si existe, o si no, el nombre original."""
     if not ex_data:
         return ""
     alternativo = ex_data.get("patientName", "").strip()
     return alternativo if alternativo else ex_data.get("name", "")
 
 def get_general_instructions():
-    """Carga el listado maestro de indicaciones generales."""
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet="indicaciones_generales", ttl=600)
         if df.empty: return []
@@ -538,23 +526,16 @@ def save_checkin_item(plan_id, date, eva, borg, comment, duration_min=None):
         "eva": str(eva), "borg": str(borg), "comment": str(comment),
         "duration_min": "" if duration_min is None else str(duration_min)
     }
-    # Guardado atómico (añade solo esta fila, sin tocar el resto) para que
-    # varios pacientes puedan enviar su reporte a la vez sin pisarse.
     ok = atomic_append_row_by_dict("checkins", row_dict, CHECKIN_COLUMNS)
     if ok:
         st.cache_data.clear()
     else:
-        # Respaldo: el método de guardado tradicional, por si el atómico falla.
         checkins_data = get_checkins()
         checkins_data.append(row_dict)
         save_checkins(checkins_data)
 
 # =============================================================
-# PROGRESO EN VIVO DE LA SESIÓN CLÍNICA (cronómetro + checks de ejercicios)
-# Se guarda en una hoja aparte ("progreso_sesion") porque cambia muy a
-# menudo (cada vez que el paciente marca un ejercicio), así que conviene
-# no mezclarlo con la hoja de "sesiones" ni forzar una relectura de
-# todas las demás hojas cada vez que se actualiza.
+# PROGRESO EN VIVO DE LA SESIÓN CLÍNICA
 # =============================================================
 PROGRESO_COLUMNS = ["planId", "opened_at", "checked_exercises"]
 LIMITE_INACTIVIDAD_HORAS = 3
@@ -581,9 +562,6 @@ def guardar_progreso_sesion(plan_id, opened_at, checked_exercises):
     row_dict = {"planId": str(plan_id), "opened_at": opened_at, "checked_exercises": json.dumps(checked_exercises)}
     ok = atomic_upsert_row_by_dict("progreso_sesion", "planId", str(plan_id), row_dict, PROGRESO_COLUMNS)
     if not ok:
-        # Respaldo: si no se puede hacer el guardado atómico, se intenta el
-        # método tradicional. Si la hoja "progreso_sesion" todavía no existe,
-        # simplemente no se guarda (no rompe la app, solo no persiste).
         try:
             df = conn.read(spreadsheet=SHEET_URL, worksheet="progreso_sesion", ttl=0)
             rows = [] if df.empty else df.to_dict("records")
@@ -618,13 +596,6 @@ def get_patient_name(p_id):
     return "Paciente Eliminado"
 
 def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
-    """
-    Calcula el estado del semáforo de adherencia para un paciente, a partir de una
-    media ponderada de 5 variables (Tiempo, EVA, Subida de EVA, Borg y Frecuencia
-    semanal). El EVA y el Tiempo tienen más peso que el resto. Aunque el resultado
-    general salga verde, cualquier variable que esté en rojo se sigue mostrando en
-    los motivos para que el fisio pueda revisarla igualmente.
-    """
     p_id = str(paciente["id"])
     planes_paciente = [str(p["id"]) for p in todos_los_planes if str(p["patientId"]) == p_id]
     checkins_pac = [c for c in todos_los_checkins if str(c.get("planId")) in planes_paciente]
@@ -643,9 +614,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
         return {"estado": estado, "icono": iconos[estado], "motivos": motivos,
                 "bg_color": colores_bg[estado], "text_color": colores_txt[estado]}
 
-    # Sin al menos 3 reportes, no hay datos suficientes para valorar ninguna
-    # variable de forma fiable (ni siquiera EVA/Tiempo, para que el semáforo
-    # arranque con criterio desde el principio).
     if len(checkins_pac) < 3:
         if planes_paciente:
             return resultado("AMARILLO", [f"Necesita al menos 3 reportes para calcular su adherencia (lleva {len(checkins_pac)})"])
@@ -666,7 +634,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
         if score < 2 and motivo_si_no_verde:
             motivos.append(motivo_si_no_verde)
 
-    # --- 1. TIEMPO (duración de sesión, últimos 7 días) — peso alto ---
     duraciones_7d = []
     for c in checkins_7d:
         try:
@@ -682,7 +649,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
         else:
             registrar(2, 2)
 
-    # --- 2. EVA (nivel de dolor, últimos 7 días) — peso alto ---
     evas_7d = []
     for c in checkins_7d:
         try:
@@ -698,7 +664,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
         else:
             registrar(2, 2)
 
-    # --- 3. SUBIDA DE EVA (última sesión vs. penúltima) — peso normal ---
     try:
         eva_ultima = float(checkins_ordenados[0].get("eva", 0))
         eva_penultima = float(checkins_ordenados[1].get("eva", 0))
@@ -710,7 +675,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
     except (ValueError, TypeError, IndexError):
         pass
 
-    # --- 4. BORG (3 sesiones seguidas con Borg ≥ 8) — peso normal ---
     try:
         ultimas_3 = checkins_ordenados[:3]
         borgs_ultimas_3 = [float(c.get("borg", 0)) for c in ultimas_3]
@@ -721,7 +685,6 @@ def calcular_semaforo_paciente(paciente, todos_los_planes, todos_los_checkins):
     except (ValueError, TypeError):
         pass
 
-    # --- 5. FRECUENCIA (sesiones en los últimos 7 días, rodante) — peso normal ---
     n_checkins_7d = len(checkins_7d)
     if n_checkins_7d < 2:
         registrar(0, 1, f"Menos de 2 sesiones esta semana ({n_checkins_7d})")
@@ -1297,8 +1260,6 @@ if st.session_state.admin_mode:
             
             st.write("")
             
-            # Editor de ejercicios. Es un contenedor normal para poder abrir un
-            # bocadillo 💬 junto a cada nombre sin crear una nueva columna de datos.
             with st.container():
                 btn_save = st.button("💾 Guardar Todos los Cambios", type="primary", use_container_width=True, key="save_all_exercises")
                 st.markdown("<hr style='margin: 10px 0 20px 0;'>", unsafe_allow_html=True)
@@ -1306,17 +1267,15 @@ if st.session_state.admin_mode:
                 nuevos_datos = {}
                 ids_borrar = []
                 
-                # El comentario va como segunda columna. Se deja deliberadamente sin título.
                 c_h1, c_h_comment, c_h_alt, c_h2, c_h3, c_h4 = st.columns([2.7, 1.0, 2.0, 2.5, 1.3, 1.0])
                 c_h1.caption("NOMBRE")
-                # c_h_comment: sin título, solo el botón 📝 ✅ / 📝 ❌
                 c_h_alt.caption("NOMBRE PARA EL PACIENTE")
                 c_h2.caption("ENLACE YOUTUBE")
                 c_h3.caption("CATEGORÍA")
                 c_h4.caption("ACCIÓN")
                 
-                for cat in CATEGORIAS_DB:
-                    ej_cat = [e for e in exercises if e.get("category") == cat]
+                for cat in CATEGORIAS_EJ:
+                    ej_cat = [e for e in exercises if get_main_category(e.get("category")) == cat]
                     ej_cat = sorted(ej_cat, key=lambda x: x["name"].lower())
                     
                     if ej_cat:
@@ -1336,7 +1295,6 @@ if st.session_state.admin_mode:
                             with c_comment:
                                 comentario_ejercicio_actual = e.get("defaultNote", "").strip()
                                 icono_estado = "✅" if comentario_ejercicio_actual else "❌"
-                                # Botón tipo bocadillo de cómic: icono de escritura + estado.
                                 with st.popover(f"📝 {icono_estado}", help="Abrir comentario asociado a este ejercicio"):
                                     st.markdown("""
                                     <div style="
@@ -1617,7 +1575,7 @@ if st.session_state.admin_mode:
                         with col_dn:
                             if st.button("⬇️", key=f"dn_{e_id}"):
                                 if idx < len(st.session_state.orden_ejs) - 1:
-                                    st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx], st.session_state.orden_ejs[idx+1]
+                                    st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx] = st.session_state.orden_ejs[idx+1], st.session_state.orden_ejs[idx]
                                     st.rerun()
                         
                         instrucciones_dict[e_id] = {"series": s, "reps": r, "notes": n}
@@ -1843,8 +1801,6 @@ if st.session_state.admin_mode:
                 dias_construidos = []
                 falta_algun_video_af = False
 
-                # Portapapeles temporal para copiar/pegar bloques dentro del mismo
-                # programa de AF que se está diseñando. No se guarda en Google Sheets.
                 if "af_block_clipboard" not in st.session_state:
                     st.session_state.af_block_clipboard = None
 
@@ -1920,67 +1876,22 @@ if st.session_state.admin_mode:
                                     continue
                                 st.session_state[f"saf_{d_idx}_{b_idx}_{eid}"] = ex.get("series", "")
                                 st.session_state[f"raf_{d_idx}_{b_idx}_{eid}"] = ex.get("reps", "")
-                                st.session_state[f"naf_{d_idx}_{b_idx}_{eid}"] = ex.get(
-                                    "notes",
-                                    get_exercise(eid).get("defaultNote", "")
-                                )
-                                prio_key_paste = f"prio_{d_idx}_{b_idx}_{eid}"
-                                st.session_state[prio_key_paste] = bool(ex.get("isPriority", False))
-                                st.session_state.prio_dict[prio_key_paste] = bool(ex.get("isPriority", False))
+                                st.session_state[f"naf_{d_idx}_{b_idx}_{eid}"] = ex.get("notes", "")
+                                st.session_state[f"prio_{d_idx}_{b_idx}_{eid}"] = ex.get("isPriority", False)
 
-                            st.session_state.af_pending_paste = None
+                            del st.session_state["af_pending_paste"]
 
                         with st.container(border=True):
-                            col_block_title, col_block_copy = st.columns([4, 1])
-                            with col_block_title:
-                                st.markdown(f"**Bloque {b_idx + 1}**")
-                            
-                            c_cat, c_sub, c_reg = st.columns([1.2, 1.2, 2])
-                            b_cat = c_cat.selectbox("Categoría del bloque:", CATEGORIAS_EJ, key=f"bcat_{d_idx}_{b_idx}")
-                            
+                            col_bc1, col_bc2, col_bc3 = st.columns([1.2, 1.2, 2])
+                            b_cat = col_bc1.selectbox("Categoría del Bloque:", CATEGORIAS_EJ, key=f"bcat_{d_idx}_{b_idx}")
                             b_subcat = "Todos"
                             if b_cat == "EEII":
-                                b_subcat = c_sub.selectbox("Filtro EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"bsub_{d_idx}_{b_idx}")
-                                
-                            b_regla = c_reg.text_input("Regla / Indicación (opcional):", placeholder="Ej: (elegir 3)", key=f"breg_{d_idx}_{b_idx}")
-                            
-                            with col_block_copy:
-                                if st.button(
-                                    "📋 Copiar",
-                                    key=f"copyb_{d_idx}_{b_idx}",
-                                    use_container_width=True,
-                                    help="Copia este bloque completo para poder pegarlo en otro día."
-                                ):
-                                    copied_exercises = []
-                                    for copied_eid in st.session_state.get(f"orden_af_{d_idx}_{b_idx}", []):
-                                        copied_obj = get_exercise(copied_eid)
-                                        if not copied_obj:
-                                            continue
-                                        copied_exercises.append({
-                                            "exerciseId": copied_eid,
-                                            "isPriority": bool(st.session_state.get(f"prio_{d_idx}_{b_idx}_{copied_eid}", False)),
-                                            "series": st.session_state.get(f"saf_{d_idx}_{b_idx}_{copied_eid}", ""),
-                                            "reps": st.session_state.get(f"raf_{d_idx}_{b_idx}_{copied_eid}", ""),
-                                            "notes": st.session_state.get(
-                                                f"naf_{d_idx}_{b_idx}_{copied_eid}",
-                                                copied_obj.get("defaultNote", "")
-                                            ),
-                                        })
+                                b_subcat = col_bc2.selectbox("Filtro EEII:", ["Todos", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"bsub_{d_idx}_{b_idx}")
+                            b_regla = col_bc3.text_input("Regla / Indicación del Bloque:", placeholder="Ej: Elige 2 ejercicios de este bloque", key=f"breg_{d_idx}_{b_idx}")
 
-                                    st.session_state.af_block_clipboard = {
-                                        "blockTitle": f"{b_cat} {b_regla}".strip(),
-                                        "blockCategory": b_cat,
-                                        "blockRule": b_regla,
-                                        "exercises": copied_exercises,
-                                    }
-                                    st.session_state.af_pending_paste = None
-                                    st.toast("Bloque copiado. Ya puedes pegarlo en otro día.", icon="📋")
-
-                            if f"orden_af_{d_idx}_{b_idx}" not in st.session_state:
-                                st.session_state[f"orden_af_{d_idx}_{b_idx}"] = []
-
-                            current_block_ids = st.session_state[f"orden_af_{d_idx}_{b_idx}"]
-                            nombres_actuales_af = [get_exercise(eid)["name"] for eid in current_block_ids if get_exercise(eid) and get_main_category(get_exercise(eid)["category"]) == b_cat]
+                            key_orden = f"orden_af_{d_idx}_{b_idx}"
+                            if key_orden not in st.session_state:
+                                st.session_state[key_orden] = []
 
                             ej_options_block = {}
                             for e in exercises:
@@ -1991,75 +1902,76 @@ if st.session_state.admin_mode:
                                         if b_subcat == "EEII (General)" and cat_e != "EEII": mostrar = False
                                         elif b_subcat == "EEII (3FE)" and cat_e != "EEII (3FE)": mostrar = False
                                         elif b_subcat == "EEII (H-H)" and cat_e != "EEII (H-H)": mostrar = False
-                                    
-                                    if mostrar or (e["name"] in nombres_actuales_af):
+                                    if mostrar:
                                         ej_options_block[e["name"]] = e["id"]
 
                             sorted_options = sorted(ej_options_block.keys(), key=lambda x: x.lower())
                             ej_options_block_sorted = {k: ej_options_block[k] for k in sorted_options}
 
-                            b_selected_names = st.multiselect("Ejercicios:", options=list(ej_options_block_sorted.keys()), default=nombres_actuales_af, key=f"bejs_{d_idx}_{b_idx}", label_visibility="collapsed")
-                            
-                            new_ids = [ej_options_block_sorted[n] for n in b_selected_names]
-                            st.session_state[f"orden_af_{d_idx}_{b_idx}"] = [e for e in st.session_state[f"orden_af_{d_idx}_{b_idx}"] if e in new_ids]
+                            curr_names = [get_exercise(eid)["name"] for eid in st.session_state[key_orden] if get_exercise(eid) and get_main_category(get_exercise(eid)["category"]) == b_cat]
+
+                            b_selected_names = st.multiselect("Ejercicios del bloque:", options=list(ej_options_block_sorted.keys()), default=curr_names, key=f"bejs_{d_idx}_{b_idx}", placeholder="Selecciona ejercicios...", label_visibility="collapsed")
+
+                            new_ids = [ej_options_block_sorted[n] for n in b_selected_names if n in ej_options_block_sorted]
+                            st.session_state[key_orden] = [e for e in st.session_state[key_orden] if e in new_ids]
                             for e in new_ids:
-                                if e not in st.session_state[f"orden_af_{d_idx}_{b_idx}"]:
-                                    st.session_state[f"orden_af_{d_idx}_{b_idx}"].append(e)
+                                if e not in st.session_state[key_orden]:
+                                    st.session_state[key_orden].append(e)
 
                             ejs_bloque_info = []
-                            if st.session_state[f"orden_af_{d_idx}_{b_idx}"]:
-                                for idx_e, eid in enumerate(st.session_state[f"orden_af_{d_idx}_{b_idx}"]):
-                                    ej_obj = get_exercise(eid)
-                                    ename = ej_obj['name'] if ej_obj else "Ejercicio"
-                                    sin_video_af = False
+                            for idx_e, eid in enumerate(st.session_state[key_orden]):
+                                ej_obj = get_exercise(eid)
+                                ename = ej_obj['name'] if ej_obj else "Ejercicio"
+                                sin_video = False
+                                if ej_obj and not tiene_video_valido(ej_obj.get("videoUrl", "")):
+                                    sin_video = True
+                                    falta_algun_video_af = True
+                                    ename += " ⚠️ (SIN VÍDEO)"
 
-                                    if ej_obj and not tiene_video_valido(ej_obj.get("videoUrl", "")):
-                                        sin_video_af = True
-                                        falta_algun_video_af = True
-                                        ename += " ⚠️"
+                                prio_k = f"prio_{d_idx}_{b_idx}_{eid}"
+                                note_k = f"naf_{d_idx}_{b_idx}_{eid}"
+                                if note_k not in st.session_state and ej_obj:
+                                    st.session_state[note_k] = ej_obj.get("defaultNote", "")
 
-                                    ce1, ce2, ce3, ce4, ce5, ce6, ce7 = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
-                                    with ce1:
-                                        col_text = "#aa3838" if sin_video_af else "inherit"
-                                        st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{col_text}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
-                                    with ce2:
-                                        s = st.text_input("S", key=f"saf_{d_idx}_{b_idx}_{eid}", placeholder="Ser", label_visibility="collapsed")
-                                    with ce3:
-                                        r = st.text_input("R", key=f"raf_{d_idx}_{b_idx}_{eid}", placeholder="Rep", label_visibility="collapsed")
-                                    with ce4:
-                                        n_key = f"naf_{d_idx}_{b_idx}_{eid}"
-                                        if n_key not in st.session_state:
-                                            st.session_state[n_key] = (ej_obj.get("defaultNote", "") if ej_obj else "")
-                                        n = st.text_input("N", key=n_key, placeholder="Nota", label_visibility="collapsed")
-                                    with ce5:
-                                        prio_key = f"prio_{d_idx}_{b_idx}_{eid}"
-                                        if prio_key not in st.session_state.prio_dict:
-                                            st.session_state.prio_dict[prio_key] = False
-                                        es_prio = st.checkbox("⭐ Prio", value=st.session_state.prio_dict[prio_key], key=prio_key, on_change=_save_prio, args=(prio_key,))
-                                    with ce6:
-                                        if st.button("⬆️", key=f"up_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
-                                            st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e-1], st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e], st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e-1]
-                                            st.rerun()
-                                    with ce7:
-                                        if st.button("⬇️", key=f"dn_{d_idx}_{b_idx}_{eid}") and idx_e < len(st.session_state[f"orden_af_{d_idx}_{b_idx}"])-1:
-                                            st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e+1], st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e] = st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e], st.session_state[f"orden_af_{d_idx}_{b_idx}"][idx_e+1]
-                                            st.rerun()
-                                    
-                                    ejs_bloque_info.append({
-                                        "exerciseId": eid,
-                                        "isPriority": es_prio,
-                                        "series": s,
-                                        "reps": r,
-                                        "notes": n
-                                    })
-                            
+                                ce1, ce2, ce3, ce4, ce5, ce6, ce7 = st.columns([3, 1, 1, 2, 1.5, 0.6, 0.6])
+                                with ce1:
+                                    color_txt = "#aa3838" if sin_video else "inherit"
+                                    st.markdown(f"<div style='margin-top:6px; font-weight:bold; color:{color_txt}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{idx_e+1}. {ename}</div>", unsafe_allow_html=True)
+                                with ce2:
+                                    s = st.text_input("S", key=f"saf_{d_idx}_{b_idx}_{eid}", placeholder="Series", label_visibility="collapsed")
+                                with ce3:
+                                    r = st.text_input("R", key=f"raf_{d_idx}_{b_idx}_{eid}", placeholder="Reps", label_visibility="collapsed")
+                                with ce4:
+                                    n = st.text_input("N", key=note_k, placeholder="Notas", label_visibility="collapsed")
+                                with ce5:
+                                    es_prio = st.checkbox("⭐ Prio", key=prio_k, on_change=_save_prio, args=(prio_k,))
+                                with ce6:
+                                    if st.button("⬆️", key=f"up_af_{d_idx}_{b_idx}_{eid}") and idx_e > 0:
+                                        st.session_state[key_orden][idx_e-1], st.session_state[key_orden][idx_e] = st.session_state[key_orden][idx_e], st.session_state[key_orden][idx_e-1]
+                                        st.rerun()
+                                with ce7:
+                                    if st.button("⬇️", key=f"dn_af_{d_idx}_{b_idx}_{eid}") and idx_e < len(st.session_state[key_orden])-1:
+                                        st.session_state[key_orden][idx_e+1], st.session_state[key_orden][idx_e] = st.session_state[key_orden][idx_e], st.session_state[key_orden][idx_e+1]
+                                        st.rerun()
+
+                                ejs_bloque_info.append({"exerciseId": eid, "isPriority": es_prio, "series": s, "reps": r, "notes": n})
+
+                            if st.button("📋 Copiar este bloque", key=f"copyb_{d_idx}_{b_idx}"):
+                                st.session_state.af_block_clipboard = {
+                                    "blockTitle": f"{b_cat} {b_regla}".strip(),
+                                    "blockCategory": b_cat,
+                                    "blockRule": b_regla,
+                                    "exercises": deepcopy(ejs_bloque_info)
+                                }
+                                st.toast("📋 Bloque copiado al portapapeles temporal.")
+
                             bloques_dia.append({
                                 "blockTitle": f"{b_cat} {b_regla}".strip(),
                                 "blockCategory": b_cat,
                                 "blockRule": b_regla,
                                 "exercises": ejs_bloque_info
                             })
-                            
+
                     dias_construidos.append({
                         "dayTitle": d_titulo,
                         "blocks": bloques_dia
@@ -2067,310 +1979,208 @@ if st.session_state.admin_mode:
 
                 st.write("")
                 if falta_algun_video_af:
-                    st.warning("⚠️ Hay ejercicios marcados en rojo que no tienen vídeo asignado.")
-                
+                    st.warning("⚠️ Atención: Hay ejercicios en la lista marcados en rojo que no tienen vídeo asignado en la base de datos.")
+
                 if st.button("💾 Guardar Programa de AF", type="primary"):
-                    if not af_titulo.strip() or not af_frecuencia.strip() or not af_duracion.strip():
-                        st.warning("⚠️ Faltan campos básicos (título, frecuencia o duración).")
+                    if not af_titulo.strip():
+                        st.warning("⚠️ Debes asignar un título al programa.")
                     else:
-                        hay_ejercicios = any(len(b["exercises"]) > 0 for d in dias_construidos for b in d["blocks"])
-                        if not hay_ejercicios:
-                            st.warning("⚠️ Debes añadir al menos un ejercicio en alguno de los bloques.")
-                        else:
-                            nuevo_pin_af = generate_unique_access_code()
-                            programs_af.append({
-                                "id": str(uuid.uuid4()),
-                                "patientId": af_paciente,
-                                "title": af_titulo,
-                                "frequency": af_frecuencia,
-                                "duration": af_duracion,
-                                "generalInstructionIds": selected_general_instruction_ids_af_crear,
-                                "generalNote": af_nota_gen,
-                                "pin": nuevo_pin_af,
-                                "startDate": datetime.date.today().strftime("%d/%m/%Y"),
-                                "daysData": dias_construidos
-                            })
-                            save_programs_af(programs_af)
-                            
-                            for k in list(st.session_state.keys()):
-                                if k.startswith("orden_af_") or k.startswith("dtit_") or k.startswith("num_bloques_"):
-                                    del st.session_state[k]
-                            st.session_state.num_dias = 1
-                            st.session_state.prio_dict = {}
-                            st.session_state.af_block_clipboard = None
-                            
-                            st.success("¡Programa de AF guardado con éxito!")
-                            
-                            nombre_pac = get_patient_name(af_paciente)
-                            mensaje_wa = f"¡Hola {nombre_pac}! 👋\n\nAquí tienes tu programa de entrenamiento: *{af_titulo}*.\n\n📱 Pulsa en el enlace para entrar directamente:\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A entrenar!"
-                            st.info("Copia el mensaje a continuación para enviarlo por WhatsApp:")
-                            st.code(mensaje_wa, language="markdown")
+                        nuevo_pin_af = generate_unique_access_code()
+                        programs_af.append({
+                            "id": str(uuid.uuid4()),
+                            "patientId": af_paciente,
+                            "title": af_titulo,
+                            "frequency": af_frecuencia,
+                            "duration": af_duracion,
+                            "generalInstructionIds": selected_general_instruction_ids_af_crear,
+                            "generalNote": af_nota_gen,
+                            "pin": nuevo_pin_af,
+                            "startDate": datetime.date.today().strftime("%d/%m/%Y"),
+                            "daysData": dias_construidos
+                        })
+                        save_programs_af(programs_af)
+                        st.success("¡Programa de AF guardado exitosamente!")
+                        nombre_paciente_af = get_patient_name(af_paciente)
+                        mensaje_wa = f"¡Hola {nombre_paciente_af}! 👋\n\nAquí tienes tu nuevo programa de actividad física: *{af_titulo}*.\n\n📱 Pulsa en el enlace para acceder directamente:\n{APP_URL}/?pin={nuevo_pin_af}\n\n¡A darle caña!"
+                        st.info("Copia el siguiente mensaje para enviarlo por WhatsApp:")
+                        st.code(mensaje_wa, language="markdown")
 
 else:
-    # =============================================================
-    # MÓDULO 2: ÁREA DEL PACIENTE / INICIO SESIÓN
-    # =============================================================
-    params = st.query_params
-    pin_from_url = extract_pin_from_input(params.get("pin", ""))
-    
-    if st.session_state.logged_pin is None:
-        if pin_from_url and st.session_state.failed_login_attempts == 0:
-            st.session_state.logged_pin = normalize_access_code(pin_from_url)
-            st.rerun()
+    # AREA PACIENTE / ACCESO CON PIN
+    query_params = st.query_params
+    pin_param = query_params.get("pin", "")
+    if isinstance(pin_param, list):
+        pin_param = pin_param[0] if pin_param else ""
 
-        st.markdown("<div style='text-align: center; margin-top: 50px;'><h1 style='color: var(--green) !important;'>🩺 FisioSesión</h1><p style='color: var(--muted) !important; font-size: 18px;'>Acceso a tu programa de recuperación</p></div>", unsafe_allow_html=True)
+    if pin_param and not st.session_state.logged_pin:
+        st.session_state.logged_pin = pin_param
+
+    if not st.session_state.logged_pin:
+        st.markdown("<h1 style='text-align:center; color:#13765d;'>🩺 FisioSesión</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#64756e;'>Introduce tu código de acceso para ver tus ejercicios</p>", unsafe_allow_html=True)
         
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.write("")
-            with st.container(border=True):
-                if login_is_temporarily_locked():
-                    tiempo_restante = (st.session_state.login_locked_until - datetime.datetime.now()).seconds // 60
-                    st.error(f"🔒 Acceso bloqueado temporalmente por demasiados intentos fallidos. Inténtalo de nuevo en {tiempo_restante + 1} minutos.")
-                else:
-                    pin_input = st.text_input("🔑 Código de acceso o enlace:", type="password", help="Pega aquí el enlace que te ha enviado tu fisio, o solo el código PIN.")
-                    if st.button("Entrar", type="primary", use_container_width=True):
-                        codigo_limpio = extract_pin_from_input(pin_input)
-                        if access_code_matches(codigo_limpio, get_admin_access_code()):
+        c_p1, c_p2, c_p3 = st.columns([1, 2, 1])
+        with c_p2:
+            with st.form("login_form"):
+                pin_input = st.text_input("Código de acceso / PIN:", placeholder="Ej: ABC123XYZ", type="password")
+                btn_login = st.form_submit_button("Entrar", type="primary", use_container_width=True)
+                
+                if btn_login:
+                    raw_pin = extract_pin_from_input(pin_input)
+                    if login_is_temporarily_locked():
+                        st.error("Demasiados intentos fallidos. Inténtalo de nuevo en unos minutos.")
+                    else:
+                        admin_pin = get_admin_access_code()
+                        if admin_pin and access_code_matches(raw_pin, admin_pin):
                             reset_login_attempts()
                             st.session_state.admin_mode = True
                             st.rerun()
                         else:
-                            encontrado = False
-                            for pl in plans:
-                                if access_code_matches(codigo_limpio, pl.get("pin", "")):
-                                    encontrado = True
+                            matched_plan = None
+                            for p in plans:
+                                if access_code_matches(raw_pin, p.get("pin", "")):
+                                    matched_plan = p
                                     break
-                            if not encontrado:
+                            matched_prog = None
+                            if not matched_plan:
                                 for pr in programs_af:
-                                    if access_code_matches(codigo_limpio, pr.get("pin", "")):
-                                        encontrado = True
+                                    if access_code_matches(raw_pin, pr.get("pin", "")):
+                                        matched_prog = pr
                                         break
-                                        
-                            if encontrado:
+                            
+                            if matched_plan or matched_prog:
                                 reset_login_attempts()
-                                st.session_state.logged_pin = normalize_access_code(codigo_limpio)
+                                st.session_state.logged_pin = raw_pin
                                 st.rerun()
                             else:
                                 register_failed_login()
-                                st.error("❌ Código incorrecto o sesión no encontrada.")
-
+                                st.error("❌ Código de acceso no válido. Comprueba el código e inténtalo de nuevo.")
     else:
-        # PACIENTE LOGUEADO
-        codigo_actual = st.session_state.logged_pin
+        current_pin = st.session_state.logged_pin
+        admin_pin = get_admin_access_code()
         
-        es_admin = access_code_matches(codigo_actual, get_admin_access_code())
-        if es_admin:
+        if admin_pin and access_code_matches(current_pin, admin_pin):
             st.session_state.admin_mode = True
             st.rerun()
-            
-        plan_encontrado = next((pl for pl in plans if access_code_matches(codigo_actual, pl.get("pin", ""))), None)
-        prog_encontrado = next((pr for pr in programs_af if access_code_matches(codigo_actual, pr.get("pin", ""))), None)
 
-        c_logo, c_out = st.columns([8, 2])
-        c_logo.markdown("<h3 style='color:var(--green) !important; margin:0;'>🩺 FisioSesión</h3>", unsafe_allow_html=True)
-        if c_out.button("🚪 Salir", use_container_width=True):
-            st.session_state.logged_pin = None
-            st.rerun()
-            
-        st.divider()
+        plan_paciente = next((p for p in plans if access_code_matches(current_pin, p.get("pin", ""))), None)
+        prog_paciente = next((pr for pr in programs_af if access_code_matches(current_pin, pr.get("pin", ""))), None)
 
-        if plan_encontrado:
-            nombre_pac = get_patient_name(plan_encontrado["patientId"])
+        if not plan_paciente and not prog_paciente:
+            st.error("❌ No se encontró ningún plan activo con este código.")
+            if st.button("🔑 Introducir otro código"):
+                st.session_state.logged_pin = None
+                st.rerun()
+        elif plan_paciente:
+            st.markdown(f"<h2 style='color:#13765d;'>{plan_paciente['title']}</h2>", unsafe_allow_html=True)
+            patient_name = get_patient_name(plan_paciente['patientId'])
+            st.markdown(f"**Paciente:** {patient_name}")
             
-            # --- Lógica de Reporte del Paciente (Check-in) ---
-            if "mostrar_form_checkin" not in st.session_state:
-                st.session_state.mostrar_form_checkin = False
+            render_general_instructions_box(plan_paciente.get("generalInstructionIds", []))
 
-            if st.session_state.mostrar_form_checkin:
-                st.markdown(f"<h2>¡Buen trabajo, {nombre_pac}! 🎉</h2>", unsafe_allow_html=True)
-                st.write("Por favor, rellena este breve reporte para que tu fisio sepa cómo ha ido.")
-                with st.form("checkin_form", clear_on_submit=True):
-                    c_eva, c_borg = st.columns(2)
-                    eva_val = c_eva.slider("💥 Nivel de Dolor (EVA)", 0, 10, 0, help="0 = Nada de dolor, 10 = El peor dolor imaginable")
-                    borg_val = c_borg.slider("🥵 Nivel de Fatiga (Borg)", 0, 10, 0, help="0 = Nada de cansancio, 10 = Esfuerzo máximo absoluto")
-                    
-                    # Calcular tiempo estimado de la sesión con el progreso guardado
-                    progreso = get_progreso_sesion(plan_encontrado["id"])
-                    tiempo_sugerido = 0
-                    if progreso.get("opened_at"):
-                        try:
-                            inicio = datetime.datetime.strptime(progreso["opened_at"], "%Y-%m-%d %H:%M:%S")
-                            minutos_transcurridos = int((datetime.datetime.now() - inicio).total_seconds() / 60)
-                            # Si ha pasado un tiempo razonable (entre 1 y 120 min), lo sugerimos
-                            if 1 <= minutos_transcurridos <= 120:
-                                tiempo_sugerido = minutos_transcurridos
-                        except Exception:
-                            pass
-                            
-                    dur_min = st.number_input("⏱️ ¿Cuántos minutos ha durado la sesión aproximadamente?", min_value=1, max_value=300, value=tiempo_sugerido if tiempo_sugerido > 0 else 30)
-                    
-                    comentario_val = st.text_area("💬 Comentarios o sensaciones (opcional)", placeholder="Ej: Me ha costado el último ejercicio, pero el dolor en la rodilla ha bajado...")
-                    
-                    if st.form_submit_button("📤 Enviar Reporte al Fisio", type="primary", use_container_width=True):
-                        ahora_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                        save_checkin_item(plan_encontrado["id"], ahora_str, eva_val, borg_val, comentario_val, dur_min)
-                        st.session_state.mostrar_form_checkin = False
-                        # Borrar el progreso en vivo para la próxima vez
-                        guardar_progreso_sesion(plan_encontrado["id"], "", [])
-                        st.success("¡Reporte enviado! Muchas gracias.")
-                        st.balloons()
-                        st.rerun()
+            st.markdown("### 🏋️ Ejercicios de la Sesión")
+            
+            p_id = plan_paciente["id"]
+            progreso = get_progreso_sesion(p_id)
+            checked_list = progreso.get("checked_exercises", [])
+
+            for idx, e_id in enumerate(plan_paciente["exerciseIds"], 1):
+                ej_obj = get_exercise(e_id)
+                if not ej_obj:
+                    continue
+                
+                inst = plan_paciente["exerciseInstructions"].get(e_id, {})
+                series_val = inst.get("series", "")
+                reps_val = inst.get("reps", "")
+                notes_val = inst.get("notes", "")
+
+                is_checked = e_id in checked_list
+                
+                with st.container(border=True):
+                    col_chk, col_info, col_vid = st.columns([0.8, 6.2, 3])
+                    with col_chk:
+                        chk = st.checkbox("", value=is_checked, key=f"chk_p_{p_id}_{e_id}")
+                        if chk != is_checked:
+                            if chk and e_id not in checked_list:
+                                checked_list.append(e_id)
+                            elif not chk and e_id in checked_list:
+                                checked_list.remove(e_id)
+                            guardar_progreso_sesion(p_id, progreso.get("opened_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")), checked_list)
+                            st.rerun()
+
+                    with col_info:
+                        nombre_mostrar = nombre_para_paciente(ej_obj)
+                        st.markdown(f"#### {idx}. {nombre_mostrar}")
                         
-                if st.button("Cancelar"):
-                    st.session_state.mostrar_form_checkin = False
-                    st.rerun()
-                    
-            else:
-                # --- Vista Principal de la Sesión Clínica ---
-                st.markdown(f"<h2>Hola, {nombre_pac} 👋</h2>", unsafe_allow_html=True)
-                st.markdown(f"**Tu sesión:** {plan_encontrado['title']}")
-                
-                # Sincronizar el progreso en vivo de esta sesión
-                progreso_actual = get_progreso_sesion(plan_encontrado["id"])
-                
-                # Si el progreso es muy antiguo (de un día anterior), lo reiniciamos
-                # automáticamente para no arrastrar checks viejos a una nueva sesión.
-                if progreso_actual.get("opened_at"):
-                    try:
-                        inicio = datetime.datetime.strptime(progreso_actual["opened_at"], "%Y-%m-%d %H:%M:%S")
-                        horas_transcurridas = (datetime.datetime.now() - inicio).total_seconds() / 3600
-                        if horas_transcurridas > LIMITE_INACTIVIDAD_HORAS:
-                            progreso_actual["opened_at"] = ""
-                            progreso_actual["checked_exercises"] = []
-                    except Exception:
-                        pass
-                
-                # Si se abre de cero (o se acaba de reiniciar), fichamos la hora
-                if not progreso_actual.get("opened_at"):
-                    progreso_actual["opened_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    guardar_progreso_sesion(plan_encontrado["id"], progreso_actual["opened_at"], progreso_actual["checked_exercises"])
+                        detalles = []
+                        if series_val: detalles.append(f"**Series:** {series_val}")
+                        if reps_val: detalles.append(f"**Reps:** {reps_val}")
+                        if detalles:
+                            st.markdown(" | ".join(detalles))
+                        if notes_val:
+                            st.markdown(f"💡 *{notes_val}*")
 
-                checks_state = set(progreso_actual.get("checked_exercises", []))
+                    with col_vid:
+                        vurl = ej_obj.get("videoUrl", "")
+                        if tiene_video_valido(vurl):
+                            st.markdown(f"<div class='st-key-v_ses_{e_id}'><a href='{vurl}' target='_blank' style='display:inline-block; background:#13765d; color:white; padding:8px 14px; border-radius:8px; text-decoration:none; font-weight:bold; font-size:13px;'>▶️ Ver Vídeo</a></div>", unsafe_allow_html=True)
 
-                render_general_instructions_box(plan_encontrado.get("generalInstructionIds", []))
+            st.divider()
+            st.markdown("### 📊 Registrar Sesión Realizada (Check-in)")
+            with st.form(f"checkin_form_{p_id}", clear_on_submit=True):
+                col_c1, col_c2, col_c3 = st.columns(3)
+                eva_val = col_c1.slider("Dolor durante la sesión (EVA 0-10):", 0, 10, 0)
+                borg_val = col_c2.slider("Esfuerzo percibido (Borg 0-10):", 0, 10, 3)
+                dur_val = col_c3.number_input("Duración total (minutos):", min_value=1, max_value=300, value=30)
+                comm_val = st.text_area("Comentarios sobre la sesión:", placeholder="Ej: Me ha molestado un poco al final del tercer ejercicio...")
                 
-                total_ejercicios = len(plan_encontrado["exerciseIds"])
-                completados = len([e for e in plan_encontrado["exerciseIds"] if e in checks_state])
-                if total_ejercicios > 0:
-                    progreso_pct = int((completados / total_ejercicios) * 100)
-                    st.progress(progreso_pct, text=f"Progreso: {completados} de {total_ejercicios} ejercicios completados")
-                
-                st.write("")
-                for idx, e_id in enumerate(plan_encontrado["exerciseIds"]):
-                    ej = get_exercise(e_id)
-                    if not ej: continue
-                    
-                    inst = plan_encontrado["exerciseInstructions"].get(e_id, {})
-                    s = inst.get("series", "")
-                    r = inst.get("reps", "")
-                    n = inst.get("notes", "")
+                if st.form_submit_button("🚀 Enviar Reporte", type="primary", use_container_width=True):
+                    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                    save_checkin_item(p_id, now_str, eva_val, borg_val, comm_val, dur_val)
+                    guardar_progreso_sesion(p_id, "", [])
+                    st.success("¡Reporte enviado correctamente a tu fisioterapeuta! 🎉")
 
-                    ej_nombre_mostrar = nombre_para_paciente(ej)
+        elif prog_paciente:
+            st.markdown(f"<h2 style='color:#13765d;'>{prog_paciente['title']}</h2>", unsafe_allow_html=True)
+            st.markdown(f"**Paciente:** {get_patient_name(prog_paciente['patientId'])}")
+            st.markdown(f"⏱️ **Frecuencia:** {prog_paciente['frequency']} días/semana | **Duración:** {prog_paciente['duration']} min/día")
+            
+            render_general_instructions_box(prog_paciente.get("generalInstructionIds", []))
 
+            if prog_paciente.get("generalNote"):
+                st.info(prog_paciente["generalNote"])
+
+            days = prog_paciente.get("daysData", [])
+            for d_idx, day in enumerate(days, 1):
+                st.markdown(f"### 📅 {day.get('dayTitle', f'Día {d_idx}')}")
+                blocks = day.get("blocks", [])
+                for b in blocks:
                     with st.container(border=True):
-                        c_title, c_check = st.columns([8.5, 1.5])
-                        
-                        marcado = e_id in checks_state
-                        
-                        def toggle_check(eid=e_id):
-                            # Al hacer clic en el checkbox, recargamos el progreso más
-                            # reciente directamente de la base de datos, lo modificamos y
-                            # lo volvemos a guardar, para asegurar que la hora de inicio
-                            # y el resto de checks no se pierdan.
-                            p = get_progreso_sesion(plan_encontrado["id"])
-                            current_checks = set(p.get("checked_exercises", []))
-                            if eid in current_checks:
-                                current_checks.remove(eid)
-                            else:
-                                current_checks.add(eid)
-                            # Si no hay opened_at, la ponemos
-                            op_at = p.get("opened_at")
-                            if not op_at:
-                                op_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            guardar_progreso_sesion(plan_encontrado["id"], op_at, list(current_checks))
-
-                        c_check.checkbox("✅", value=marcado, key=f"chk_{e_id}_{idx}", on_change=toggle_check, label_visibility="collapsed")
-                        
-                        titulo_estilo = "color:var(--ink);" if not marcado else "color:var(--muted); text-decoration:line-through;"
-                        c_title.markdown(f"<h4 style='{titulo_estilo} margin-bottom:5px;'>{idx + 1}. {ej_nombre_mostrar}</h4>", unsafe_allow_html=True)
-                        
-                        # Fila de datos (Series / Reps / Video)
-                        cols_data = st.columns([2, 2, 6])
-                        if s: cols_data[0].markdown(f"**Series:** {s}")
-                        if r: cols_data[1].markdown(f"**Reps:** {r}")
-                        
-                        with cols_data[2]:
-                            if tiene_video_valido(ej['videoUrl']):
-                                st.link_button("▶️ Ver Vídeo", ej['videoUrl'], use_container_width=False, key=f"v_ses_{e_id}_{idx}")
-                        
-                        if n:
-                            st.markdown(f"""
-                            <div style='background-color:#fffef7; border-left:4px solid #f57f17; padding:10px 14px; margin-top:12px; border-radius:4px;'>
-                                <span style='font-weight:600; color:#f57f17;'>💡 Nota:</span> <span style='color:#17352e; font-size:14px;'>{n}</span>
-                            </div>
-                            """, unsafe_allow_html=True)
+                        st.markdown(f"#### 🔹 {b.get('blockTitle', 'Bloque')}")
+                        for ex_item in b.get("exercises", []):
+                            eid = ex_item.get("exerciseId")
+                            ej_obj = get_exercise(eid)
+                            if not ej_obj:
+                                continue
                             
-                st.write("")
-                if st.button("🏁 Finalizar y Enviar Reporte", type="primary", use_container_width=True):
-                    st.session_state.mostrar_form_checkin = True
-                    st.rerun()
+                            prio_str = "⭐ " if ex_item.get("isPriority") else ""
+                            nombre_disp = nombre_para_paciente(ej_obj)
+                            
+                            col_e1, col_e2 = st.columns([7, 3])
+                            with col_e1:
+                                st.markdown(f"**{prio_str}{nombre_disp}**")
+                                det = []
+                                if ex_item.get("series"): det.append(f"Series: {ex_item['series']}")
+                                if ex_item.get("reps"): det.append(f"Reps: {ex_item['reps']}")
+                                if det: st.caption(" | ".join(det))
+                                if ex_item.get("notes"): st.caption(f"💡 {ex_item['notes']}")
+                            with col_e2:
+                                vurl = ej_obj.get("videoUrl", "")
+                                if tiene_video_valido(vurl):
+                                    st.markdown(f"<a href='{vurl}' target='_blank' style='display:inline-block; background:#13765d; color:white; padding:6px 12px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:12px;'>▶️ Ver Vídeo</a>", unsafe_allow_html=True)
 
-        elif prog_encontrado:
-            # --- Vista del Programa de Actividad Física (AF) ---
-            nombre_pac_af = get_patient_name(prog_encontrado["patientId"])
-            st.markdown(f"<h2>Hola, {nombre_pac_af} 👋</h2>", unsafe_allow_html=True)
-            st.markdown(f"**Tu programa:** {prog_encontrado['title']}")
-            
-            c_f, c_d = st.columns(2)
-            c_f.info(f"📅 **Frecuencia:** {prog_encontrado['frequency']} días/semana")
-            c_d.info(f"⏱️ **Duración:** {prog_encontrado['duration']} min/día")
-            
-            if prog_encontrado.get("generalNote"):
-                st.markdown(f"<div style='background:#fffef7; border-left:4px solid #f57f17; padding:12px 16px; margin-bottom:20px; border-radius:6px; font-size:14px;'>{prog_encontrado['generalNote']}</div>", unsafe_allow_html=True)
-
-            render_general_instructions_box(prog_encontrado.get("generalInstructionIds", []))
-
-            dias_data = prog_encontrado.get("daysData", [])
-            if not dias_data:
-                st.info("Este programa todavía no tiene días configurados.")
-            else:
-                titulos_tabs = [d.get("dayTitle", f"Día {i+1}") for i, d in enumerate(dias_data)]
-                tabs_dias = st.tabs(titulos_tabs)
-                
-                for d_idx, tab_dia in enumerate(tabs_dias):
-                    with tab_dia:
-                        bloques = dias_data[d_idx].get("blocks", [])
-                        if not bloques:
-                            st.write("No hay bloques para este día.")
-                        else:
-                            for b_idx, block in enumerate(bloques):
-                                st.markdown(f"<div style='background:#103d33; color:white; padding:8px 15px; border-radius:8px 8px 0 0; margin-top:20px;'><span style='font-weight:bold; font-size:16px;'>{block.get('blockTitle', f'Bloque {b_idx+1}')}</span></div>", unsafe_allow_html=True)
-                                
-                                ejercicios_b = block.get("exercises", [])
-                                if not ejercicios_b:
-                                    st.markdown("<div style='border:1px solid #dce7e2; border-top:none; padding:15px; border-radius:0 0 8px 8px; background:white;'>Sin ejercicios</div>", unsafe_allow_html=True)
-                                else:
-                                    with st.container(border=True):
-                                        for idx_e, ex in enumerate(ejercicios_b):
-                                            ej_obj = get_exercise(ex.get("exerciseId"))
-                                            if not ej_obj: continue
-                                            
-                                            ej_nombre_mostrar = nombre_para_paciente(ej_obj)
-                                            estrella = "⭐ " if ex.get("isPriority") else ""
-                                            st.markdown(f"<h5 style='margin-bottom:6px; color:var(--ink);'>{idx_e+1}. {estrella}{ej_nombre_mostrar}</h5>", unsafe_allow_html=True)
-                                            
-                                            cd1, cd2, cd3 = st.columns([1.5, 1.5, 7])
-                                            if ex.get("series"): cd1.markdown(f"**S:** {ex.get('series')}")
-                                            if ex.get("reps"): cd2.markdown(f"**R:** {ex.get('reps')}")
-                                            with cd3:
-                                                if tiene_video_valido(ej_obj.get("videoUrl", "")):
-                                                    st.link_button("▶️ Vídeo", ej_obj["videoUrl"], key=f"v_af_{prog_encontrado['id']}_{d_idx}_{b_idx}_{idx_e}")
-                                                    
-                                            if ex.get("notes"):
-                                                st.markdown(f"<div style='color:#64756e; font-size:14px; margin-top:5px;'>*{ex.get('notes')}*</div>", unsafe_allow_html=True)
-                                                
-                                            if idx_e < len(ejercicios_b) - 1:
-                                                st.markdown("<hr style='margin:12px 0;'>", unsafe_allow_html=True)
-        else:
-            st.error("No se ha podido cargar la información de este PIN.")
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        if st.button("🔒 Salir / Cambiar de código"):
+            st.session_state.logged_pin = None
+            st.session_state.admin_mode = False
+            st.rerun()
