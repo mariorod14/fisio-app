@@ -335,14 +335,27 @@ def get_filtered_exercises(filtro, selected_ids):
        Asegura que los ejercicios ya seleccionados siempre aparezcan en la lista
        para que el multiselect de Streamlit no los desmarque al cambiar de filtro."""
     options = {}
-    for e in sorted(exercises, key=lambda x: (x.get("category", ""), x.get("name", "").lower())):
+
+    # En EEII se muestran juntas las tres categorías (EEII, EEII 3FE y EEII H-H)
+    # y se ordenan únicamente por nombre para que queden intercaladas alfabéticamente.
+    if filtro == "EEII":
+        ejercicios_ordenados = sorted(
+            exercises,
+            key=lambda x: x.get("name", "").lower()
+        )
+    else:
+        ejercicios_ordenados = sorted(
+            exercises,
+            key=lambda x: (x.get("category", ""), x.get("name", "").lower())
+        )
+
+    for e in ejercicios_ordenados:
         cat = e.get("category", "")
         match = False
         if filtro == "Todas": match = True
-        elif filtro == "EEII (Todas)": match = cat.startswith("EEII")
-        elif filtro == "EEII (General)": match = cat == "EEII"
+        elif filtro == "EEII": match = cat.startswith("EEII")
         elif cat == filtro: match = True
-        
+
         # Si coincide con el filtro O ya estaba seleccionado, se incluye
         if match or str(e['id']) in selected_ids:
             options[f"{cat}  |  {e['name']}"] = e['id']
@@ -730,7 +743,10 @@ if st.session_state.admin_mode:
             st.session_state[f"edit_ses_{pl_id}_ejs"] = pl["exerciseIds"].copy()
 
         # Nuevo filtro implementado
-        filtro_cat = st.selectbox("Filtrar por categoría:", ["Todas", "CORE", "EEII (Todas)", "EEII (General)", "EEII (3FE)", "EEII (H-H)", "EESS", "Estiramientos y movilidad"], key=f"filt_es_{pl_id}")
+        filtro_cat_options = ["Todas", "CORE", "EEII", "EEII (3FE)", "EEII (H-H)", "EESS", "Estiramientos y movilidad"]
+        if f"filt_es_{pl_id}" in st.session_state and st.session_state[f"filt_es_{pl_id}"] not in filtro_cat_options:
+            st.session_state[f"filt_es_{pl_id}"] = "Todas"
+        filtro_cat = st.selectbox("Filtrar por categoría:", filtro_cat_options, key=f"filt_es_{pl_id}")
         ej_options_all = get_filtered_exercises(filtro_cat, st.session_state[f"edit_ses_{pl_id}_ejs"])
         default_nombres = [k for k, v in ej_options_all.items() if v in st.session_state[f"edit_ses_{pl_id}_ejs"]]
             
@@ -858,14 +874,20 @@ if st.session_state.admin_mode:
                     def_cat_idx = MACRO_CATEGORIAS.index(old_block_cat) if old_block_cat in MACRO_CATEGORIAS else 0
                     def_rule = old_block.get("blockRule", "") if old_block else ""
                     
-                    col_bcat, col_breg = st.columns([1, 2])
-                    b_cat = col_bcat.selectbox("Categoría:", MACRO_CATEGORIAS, index=def_cat_idx, key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
-                    b_regla = col_breg.text_input("Regla / Indicación:", value=def_rule, key=f"ebreg_{pr_id}_{d_idx}_{b_idx}")
-                    
-                    if b_cat == "EEII":
-                        b_sub = st.selectbox("Filtro de ejercicios (EEII):", ["EEII (Todas)", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"ebsub_{pr_id}_{d_idx}_{b_idx}")
+                    if st.session_state.get(f"ebcat_{pr_id}_{d_idx}_{b_idx}", old_block_cat) == "EEII":
+                        col_bcat, col_bsub, col_breg = st.columns([1, 1, 1.5])
+                        b_cat = col_bcat.selectbox("Categoría:", MACRO_CATEGORIAS, index=def_cat_idx, key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
+                        sub_options = ["EEII (3FE)", "EEII (H-H)"]
+                        sub_key = f"ebsub_{pr_id}_{d_idx}_{b_idx}"
+                        if sub_key in st.session_state and st.session_state[sub_key] not in sub_options:
+                            st.session_state[sub_key] = "EEII (3FE)"
+                        b_sub = col_bsub.selectbox("Filtro de ejercicios (EEII):", sub_options, key=sub_key)
+                        b_regla = col_breg.text_input("Regla / Indicación:", value=def_rule, key=f"ebreg_{pr_id}_{d_idx}_{b_idx}")
                     else:
+                        col_bcat, col_breg = st.columns([1, 2])
+                        b_cat = col_bcat.selectbox("Categoría:", MACRO_CATEGORIAS, index=def_cat_idx, key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
                         b_sub = b_cat
+                        b_regla = col_breg.text_input("Regla / Indicación:", value=def_rule, key=f"ebreg_{pr_id}_{d_idx}_{b_idx}")
                     
                     if f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}" not in st.session_state:
                         default_ids = []
@@ -1422,7 +1444,10 @@ if st.session_state.admin_mode:
                 
                 st.markdown("**3. Selecciona los ejercicios:**")
                 
-                filtro_cat = st.selectbox("Filtrar por categoría:", ["Todas", "CORE", "EEII (Todas)", "EEII (General)", "EEII (3FE)", "EEII (H-H)", "EESS", "Estiramientos y movilidad"], key="filtro_cat_crear_sesion")
+                filtro_cat_options = ["Todas", "CORE", "EEII", "EEII (3FE)", "EEII (H-H)", "EESS", "Estiramientos y movilidad"]
+                if "filtro_cat_crear_sesion" in st.session_state and st.session_state["filtro_cat_crear_sesion"] not in filtro_cat_options:
+                    st.session_state["filtro_cat_crear_sesion"] = "Todas"
+                filtro_cat = st.selectbox("Filtrar por categoría:", filtro_cat_options, key="filtro_cat_crear_sesion")
                 
                 if 'orden_ejs' not in st.session_state:
                     st.session_state.orden_ejs = []
@@ -1743,7 +1768,10 @@ if st.session_state.admin_mode:
                         cb = st.session_state.af_block_clipboard
                         
                         st.session_state[f"bcat_{d_idx}_{nuevo_b_idx}"] = cb.get("bcat", MACRO_CATEGORIAS[0])
-                        st.session_state[f"bsub_{d_idx}_{nuevo_b_idx}"] = cb.get("bsub", "")
+                        pasted_bsub = cb.get("bsub", "")
+                        if cb.get("bcat", MACRO_CATEGORIAS[0]) == "EEII" and pasted_bsub not in ("EEII (3FE)", "EEII (H-H)"):
+                            pasted_bsub = "EEII (3FE)"
+                        st.session_state[f"bsub_{d_idx}_{nuevo_b_idx}"] = pasted_bsub
                         st.session_state[f"breg_{d_idx}_{nuevo_b_idx}"] = cb.get("breg", "")
                         st.session_state[f"bejs_{d_idx}_{nuevo_b_idx}"] = deepcopy(cb.get("bejs", []))
                         st.session_state[f"orden_af_{d_idx}_{nuevo_b_idx}"] = deepcopy(cb.get("orden_af", []))
@@ -1766,16 +1794,22 @@ if st.session_state.admin_mode:
                             with col_block_title:
                                 st.markdown(f"**Bloque {b_idx + 1}**")
                             
-                            col_bcat, col_breg = st.columns([1, 2])
-
-                            b_cat = col_bcat.selectbox("Categoría del bloque:", MACRO_CATEGORIAS, key=f"bcat_{d_idx}_{b_idx}")
-                            b_regla = col_breg.text_input("Regla / Indicación (opcional):", placeholder="Ej: (elegir 3)", key=f"breg_{d_idx}_{b_idx}")
-                            
-                            # Filtro dinámico si se elige EEII
-                            if b_cat == "EEII":
-                                b_sub = st.selectbox("Filtro de ejercicios (EEII):", ["EEII (Todas)", "EEII (General)", "EEII (3FE)", "EEII (H-H)"], key=f"bsub_{d_idx}_{b_idx}")
+                            if st.session_state.get(f"bcat_{d_idx}_{b_idx}", MACRO_CATEGORIAS[0]) == "EEII":
+                                col_bcat, col_bsub, col_breg = st.columns([1, 1, 1.5])
+                                b_cat = col_bcat.selectbox("Categoría del bloque:", MACRO_CATEGORIAS, key=f"bcat_{d_idx}_{b_idx}")
+                                sub_options = ["EEII (3FE)", "EEII (H-H)"]
+                                sub_key = f"bsub_{d_idx}_{b_idx}"
+                                if sub_key not in st.session_state:
+                                    st.session_state[sub_key] = sub_options[0]
+                                elif st.session_state[sub_key] not in sub_options:
+                                    st.session_state[sub_key] = sub_options[0]
+                                b_sub = col_bsub.selectbox("Filtro de ejercicios (EEII):", sub_options, key=sub_key)
+                                b_regla = col_breg.text_input("Regla / Indicación (opcional):", placeholder="Ej: (elegir 3)", key=f"breg_{d_idx}_{b_idx}")
                             else:
+                                col_bcat, col_breg = st.columns([1, 2])
+                                b_cat = col_bcat.selectbox("Categoría del bloque:", MACRO_CATEGORIAS, key=f"bcat_{d_idx}_{b_idx}")
                                 b_sub = b_cat
+                                b_regla = col_breg.text_input("Regla / Indicación (opcional):", placeholder="Ej: (elegir 3)", key=f"breg_{d_idx}_{b_idx}")
                             
                             with col_block_copy:
                                 if st.button(
