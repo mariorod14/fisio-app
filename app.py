@@ -932,7 +932,8 @@ if st.session_state.admin_mode:
                             
                     ejs_bloque_info = []
                     for idx_e, eid in enumerate(st.session_state[f"edit_af_{pr_id}_ejs_{d_idx}_{b_idx}"]):
-                        ename = get_exercise(eid)['name'] if get_exercise(eid) else "Ejercicio"
+                        ej_obj = get_exercise(eid)
+                        ename = ej_obj['name'] if ej_obj else "Ejercicio"
                         
                         def_prio = False
                         def_s = ""
