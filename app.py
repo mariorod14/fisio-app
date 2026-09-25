@@ -359,7 +359,10 @@ def get_filtered_exercises(filtro, selected_ids):
 
         # Si coincide con el filtro O ya estaba seleccionado, se incluye
         if match or str(e['id']) in selected_ids:
-            options[f"{cat}  |  {e['name']}"] = e['id']
+            # Se rellena la categoría con espacios hasta un ancho fijo para que el
+            # nombre del ejercicio quede siempre a la misma altura, aunque el
+            # nombre de la categoría sea más largo en unos casos que en otros.
+            options[f"{cat.ljust(17)}| {e['name']}"] = e['id']
     return options
 
 def nombre_para_paciente(ex_data):
@@ -755,10 +758,10 @@ if st.session_state.admin_mode:
             filt_sub_key = f"filt_sub_es_{pl_id}"
             if filtro_macro == "EEII":
                 sub_options = ["EEII", "EEII (3FE)", "EEII (H-H)"]
-                sub_labels = {"EEII": "Todos los de EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
+                sub_labels = {"EEII": "EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
             else:
                 sub_options = ["EESS", "EESS (empuje)", "EESS (traccion)"]
-                sub_labels = {"EESS": "Todos los de EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
+                sub_labels = {"EESS": "EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
             if filt_sub_key not in st.session_state or st.session_state[filt_sub_key] not in sub_options:
                 st.session_state[filt_sub_key] = sub_options[0]
             filtro_cat = col_fsub.selectbox("Filtro de ejercicios:", sub_options, format_func=lambda x: sub_labels.get(x, x), key=filt_sub_key)
@@ -897,14 +900,14 @@ if st.session_state.admin_mode:
                         b_cat = col_bcat.selectbox("Categoría:", MACRO_CATEGORIAS, index=def_cat_idx, key=f"ebcat_{pr_id}_{d_idx}_{b_idx}")
                         if b_cat == "EEII":
                             sub_options = ["EEII", "EEII (3FE)", "EEII (H-H)"]
-                            sub_labels = {"EEII": "Todos los de EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
+                            sub_labels = {"EEII": "EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
                             sub_key = f"ebsub_{pr_id}_{d_idx}_{b_idx}"
                             if sub_key in st.session_state and st.session_state[sub_key] not in sub_options:
                                 st.session_state[sub_key] = "EEII"
                             b_sub = col_bsub.selectbox("Filtro de ejercicios (EEII):", sub_options, format_func=lambda x: sub_labels.get(x, x), key=sub_key)
                         else:
                             sub_options = ["EESS", "EESS (empuje)", "EESS (traccion)"]
-                            sub_labels = {"EESS": "Todos los de EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
+                            sub_labels = {"EESS": "EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
                             sub_key = f"ebsub_{pr_id}_{d_idx}_{b_idx}"
                             if sub_key in st.session_state and st.session_state[sub_key] not in sub_options:
                                 st.session_state[sub_key] = "EESS"
@@ -1482,10 +1485,10 @@ if st.session_state.admin_mode:
                     filt_sub_key = "filtro_sub_crear_sesion"
                     if filtro_macro == "EEII":
                         sub_options = ["EEII", "EEII (3FE)", "EEII (H-H)"]
-                        sub_labels = {"EEII": "Todos los de EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
+                        sub_labels = {"EEII": "EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
                     else:
                         sub_options = ["EESS", "EESS (empuje)", "EESS (traccion)"]
-                        sub_labels = {"EESS": "Todos los de EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
+                        sub_labels = {"EESS": "EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
                     if filt_sub_key not in st.session_state or st.session_state[filt_sub_key] not in sub_options:
                         st.session_state[filt_sub_key] = sub_options[0]
                     filtro_cat = col_fsub.selectbox("Filtro de ejercicios:", sub_options, format_func=lambda x: sub_labels.get(x, x), key=filt_sub_key)
@@ -1845,7 +1848,7 @@ if st.session_state.admin_mode:
                                 sub_key = f"bsub_{d_idx}_{b_idx}"
                                 if b_cat == "EEII":
                                     sub_options = ["EEII", "EEII (3FE)", "EEII (H-H)"]
-                                    sub_labels = {"EEII": "Todos los de EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
+                                    sub_labels = {"EEII": "EEII", "EEII (3FE)": "EEII (3FE)", "EEII (H-H)": "EEII (H-H)"}
                                     if sub_key not in st.session_state:
                                         st.session_state[sub_key] = sub_options[0]
                                     elif st.session_state[sub_key] not in sub_options:
@@ -1853,7 +1856,7 @@ if st.session_state.admin_mode:
                                     b_sub = col_bsub.selectbox("Filtro de ejercicios (EEII):", sub_options, format_func=lambda x: sub_labels.get(x, x), key=sub_key)
                                 else:
                                     sub_options = ["EESS", "EESS (empuje)", "EESS (traccion)"]
-                                    sub_labels = {"EESS": "Todos los de EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
+                                    sub_labels = {"EESS": "EESS", "EESS (empuje)": "EESS (empuje)", "EESS (traccion)": "EESS (traccion)"}
                                     if sub_key not in st.session_state:
                                         st.session_state[sub_key] = sub_options[0]
                                     elif st.session_state[sub_key] not in sub_options:
