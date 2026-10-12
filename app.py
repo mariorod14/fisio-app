@@ -1544,7 +1544,7 @@ if st.session_state.admin_mode:
                             s = st.text_input("S", key=f"ser_{e_id}", placeholder="Series", label_visibility="collapsed")
                         with col_r:
                             r = st.text_input("R", key=f"rep_{e_id}", placeholder="Reps", label_visibility="collapsed")
-                        with c_n:
+                        with col_n:
                             note_key = f"not_{e_id}"
                             if note_key not in st.session_state:
                                 st.session_state[note_key] = (ej_obj.get("defaultNote", "") if ej_obj else "")
