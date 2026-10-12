@@ -331,7 +331,7 @@ def save_exercises(exercises_list):
     st.cache_data.clear()
 
 def get_filtered_exercises(filtro, selected_ids):
-    """Devuelve un diccionario de ejercicios { 'Categoría | Nombre': id } filtrado.
+    """Devuelve un diccionario de ejercicios { 'Nombre  ·  Categoría': id } filtrado.
        Asegura que los ejercicios ya seleccionados siempre aparezcan en la lista
        para que el multiselect de Streamlit no los desmarque al cambiar de filtro."""
     options = {}
@@ -359,10 +359,10 @@ def get_filtered_exercises(filtro, selected_ids):
 
         # Si coincide con el filtro O ya estaba seleccionado, se incluye
         if match or str(e['id']) in selected_ids:
-            # Se rellena la categoría con espacios hasta un ancho fijo para que el
-            # nombre del ejercicio quede siempre a la misma altura, aunque el
-            # nombre de la categoría sea más largo en unos casos que en otros.
-            options[f"{cat.ljust(17)}| {e['name']}"] = e['id']
+            # El nombre del ejercicio va primero y la categoría al final, así los
+            # nombres quedan siempre alineados en el borde izquierdo aunque la
+            # categoría (o su subcategoría entre paréntesis) tenga distinta longitud.
+            options[f"{e['name']}  ·  {cat}"] = e['id']
     return options
 
 def nombre_para_paciente(ex_data):
